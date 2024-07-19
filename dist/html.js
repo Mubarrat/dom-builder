@@ -1,5 +1,5 @@
 /*!
- * Html-Builder JavaScript Library v2.0.1
+ * Html-Builder JavaScript Library v2.1.0
  * https://github.com/Mubarrat/html-builder/
  * 
  * Released under the MIT license
@@ -7,10 +7,9 @@
  */
 "use strict";
 function appendChildren(parent, ...children) {
-    if (!isChildrenType(children)) {
+    if (!isChildrenType(children))
         throw new Error("Invalid children provided");
-    }
-    for (const child of children) {
+    for (const child of children)
         switch (typeof child) {
             case "string":
             case "number":
@@ -18,18 +17,15 @@ function appendChildren(parent, ...children) {
                 parent.appendChild(document.createTextNode(child.toString()));
                 break;
             case "object":
-                if (Array.isArray(child)) {
+                if (Array.isArray(child))
                     appendChildren(parent, ...child);
-                }
-                else {
+                else
                     parent.appendChild(child.build());
-                }
                 break;
             default:
                 parent.appendChild(document.createTextNode(String(child)));
                 break;
         }
-    }
 }
 class Html {
     constructor(...elements) {
@@ -46,10 +42,12 @@ class Html {
 }
 class HtmlAttributes {
     constructor(attributes = {}) {
-        this.attributes = attributes;
-        if (typeof attributes !== "object") {
+        this.attributes = {};
+        if (!isAttributesType(attributes))
             throw new Error("Invalid attributes provided");
-        }
+        Object.assign(this.attributes, attributes instanceof HtmlAttributes
+            ? attributes.attributes
+            : attributes);
     }
     get(attributeName) {
         return this.attributes[attributeName];
@@ -60,20 +58,17 @@ class HtmlAttributes {
     build(element) {
         for (const attr of Object.keys(this.attributes)) {
             const value = this.get(attr);
-            if (attr === 'class') {
+            if (attr === 'class' && typeof value === 'string')
                 element.classList.add(...value.split(' '));
-            }
-            else if (attr === 'style' && typeof value === 'object') {
+            else if (attr === 'class' && Array.isArray(value))
+                element.classList.add(...value);
+            else if (attr === 'style' && typeof value === 'object')
                 Object.assign(element.style, value);
-            }
-            else if (attr === 'on' && typeof value === 'object') {
-                for (const eventName in value) {
-                    this.addEvents(element, eventName, value[eventName]);
-                }
-            }
-            else if (attr.startsWith('on')) {
+            else if (attr === 'on' && typeof value === 'object')
+                for (const eventName in value)
+                    this.addEvents(element, eventName.toLowerCase(), value[eventName]);
+            else if (attr.startsWith('on'))
                 this.addEvents(element, attr.toLowerCase().substring(2), value);
-            }
             else if (attr === 'data' && typeof value === 'object') {
                 for (const name in value) {
                     const data = value[name];
@@ -82,26 +77,21 @@ class HtmlAttributes {
                         : data);
                 }
             }
-            else {
+            else
                 element.setAttribute(attr, typeof value === 'object'
                     ? JSON.stringify(value)
                     : value);
-            }
         }
         return element;
     }
     addEvents(element, eventName, ...events) {
-        for (const event of events) {
-            if (typeof event === 'function') {
+        for (const event of events)
+            if (typeof event === 'function')
                 element.addEventListener(eventName, event);
-            }
-            else if (isEventWithBubbleType(event)) {
+            else if (isEventWithBubbleType(event))
                 element.addEventListener(eventName, event[0], event[1]);
-            }
-            else if (Array.isArray(event)) {
+            else if (Array.isArray(event))
                 this.addEvents(element, eventName, ...event);
-            }
-        }
         return this;
     }
 }
@@ -180,5 +170,9 @@ function isEventType(obj) {
         ? obj.every(isEventType)
         : obj instanceof Function
             || isEventWithBubbleType(obj));
+}
+function isAttributesType(obj) {
+    return (obj instanceof HtmlAttributes
+        || typeof obj == "object");
 }
 //# sourceMappingURL=html.js.map

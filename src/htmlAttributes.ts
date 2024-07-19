@@ -26,19 +26,34 @@
  * HtmlAttributes class to manage HTML element attributes.
  */
 class HtmlAttributes {
+
+  /**
+   * Internal attributes.
+   */
+  attributes: { [attributeName: string]: any } = {};
   
   /**
    * To initialize attributes for HTML element.
    * @param attributes An set of attributes.
    */
-  constructor(public attributes: object = {}) {
+  constructor(attributes: AttributesType = {}) {
 
     // Validate attributes as an object
-    if (typeof attributes !== "object") {
+    if (!isAttributesType(attributes))
 
       // Since attributes aren't validated, let's throw an error.
       throw new Error("Invalid attributes provided");
-    }
+
+    Object.assign(this.attributes,
+
+      // Check If it's HtmlAttributes
+      attributes instanceof HtmlAttributes
+
+      // Assign with it's internal attributes
+      ? attributes.attributes
+
+      // Or assign with it
+      : attributes);
   }
 
   /**
@@ -48,7 +63,7 @@ class HtmlAttributes {
   get(attributeName: string) {
 
     // Return a attributes value
-    return (this.attributes as Record<string, any>)[attributeName];
+    return this.attributes[attributeName];
   }
 
   /**
@@ -58,7 +73,7 @@ class HtmlAttributes {
   set(attributeName: string, attributeValue: any) {
 
     // Set a attributes value
-    (this.attributes as Record<string, any>)[attributeName] = attributeValue;
+    this.attributes[attributeName] = attributeValue;
   }
 
   /**
@@ -74,37 +89,41 @@ class HtmlAttributes {
       // Get the value from Object
       const value = this.get(attr);
 
-      // Handle class attribute
-      if (attr === 'class') {
+      // Handle class attribute if it's string
+      if (attr === 'class' && typeof value === 'string')
 
         // Add classes to the element
         element.classList.add(...value.split(' '));
-      }
+
+        // Note: DOMTokenList has value property and also settable but
+        // we shouldn't use it as it may contains space(s) at end or not.
+
+      // Handle class attribute if it's come as array
+      else if (attr === 'class' && Array.isArray(value))
+
+        // Add classes to the element
+        element.classList.add(...value);
 
       // Handle style attribute
-      else if (attr === 'style' && typeof value === 'object') {
+      else if (attr === 'style' && typeof value === 'object')
 
         // Merge styles into element's style attribute
         Object.assign(element.style, value);
-      }
 
       // Assuming 'on' is an object containing event listeners
-      else if (attr === 'on' && typeof value === 'object') {
+      else if (attr === 'on' && typeof value === 'object')
 
         // Iterate over events and attach them to the element
-        for (const eventName in value) {
+        for (const eventName in value)
 
           // Recursively add events
-          this.addEvents(element, eventName, value[eventName]);
-        }
-      }
+          this.addEvents(element, eventName.toLowerCase(), value[eventName]);
 
       // Handle event listeners
-      else if (attr.startsWith('on')) {
+      else if (attr.startsWith('on'))
 
         // Recursively add events
         this.addEvents(element, attr.toLowerCase().substring(2), value);
-      }
 
       // Assuming 'data' is an object containing data information
       else if (attr === 'data' && typeof value === 'object') {
@@ -129,21 +148,17 @@ class HtmlAttributes {
         }
       }
 
-      // Handle other attributes
-      else {
+      // Set other attributes
+      else element.setAttribute(attr,
 
-        // Set attributes
-        element.setAttribute(attr,
-          
-          // If value is an object
-          typeof value === 'object'
-          
-          // Stringify it
-          ? JSON.stringify(value)
-          
-          // Otherwise set it as provided
-          : value);
-      }
+        // If value is an object
+        typeof value === 'object'
+        
+        // Stringify it
+        ? JSON.stringify(value)
+        
+        // Otherwise set it as provided
+        : value);
     }
 
     // Return a element
@@ -160,29 +175,25 @@ class HtmlAttributes {
   addEvents(element: HTMLElement, eventName: string, ...events: EventType[]): HtmlAttributes {
     
     // Iterate event over events
-    for (const event of events) {
+    for (const event of events)
 
       // Check if the event is a function
-      if (typeof event === 'function') {
+      if (typeof event === 'function')
 
         // Add event listener to the element based on the useCapture parameter
         element.addEventListener(eventName, event);
-      }
 
       // Check if the event is a function with a option
-      else if (isEventWithBubbleType(event)) {
+      else if (isEventWithBubbleType(event))
 
         // Add event listener to the element based on the useCapture parameter
         element.addEventListener(eventName, event[0], event[1]);
-      }
 
       // Check if the event is an array
-      else if (Array.isArray(event)) {
+      else if (Array.isArray(event))
 
         // Recursively add events
         this.addEvents(element, eventName, ...event);
-      }
-    }
 
     // Return this class for chaining
     return this;

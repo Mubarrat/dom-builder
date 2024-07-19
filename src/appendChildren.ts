@@ -30,14 +30,13 @@
 function appendChildren(parent: HTMLElement | DocumentFragment, ...children: ChildrenType[]) {
 
   // Validate children
-  if (!isChildrenType(children)) {
+  if (!isChildrenType(children))
 
     // let's throw an error.
     throw new Error("Invalid children provided");
-  }
 
   // Iterate child over children
-  for (const child of children) {
+  for (const child of children)
 
     // Compare type of child
     switch (typeof child) {
@@ -55,18 +54,17 @@ function appendChildren(parent: HTMLElement | DocumentFragment, ...children: Chi
       case "object":
 
         // Check if child is an array
-        if (Array.isArray(child)) {
+        if (Array.isArray(child))
 
           // Array of children, recursively append
           appendChildren(parent, ...child);
-        }
 
-        // Otherwise, The only scope is that the child is HtmlItem
-        else {
+        // Otherwise, The only scope for that child is HtmlItem
+        else
 
           // Append child to the parent element
           parent.appendChild(child.build());
-        }
+
         break;
 
       // If anything else
@@ -76,5 +74,4 @@ function appendChildren(parent: HTMLElement | DocumentFragment, ...children: Chi
         parent.appendChild(document.createTextNode(String(child)));
         break;
     }
-  }
 }

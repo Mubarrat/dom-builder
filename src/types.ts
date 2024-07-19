@@ -124,3 +124,26 @@ function isEventType(obj: any): obj is EventType {
     || isEventWithBubbleType(obj)
   );
 }
+
+/**
+ * Attributes type definition
+ */
+type AttributesType = HtmlAttributes | { [attributeName: string]: any };
+
+/**
+ * Check that obj is an AttributesType
+ * @param obj The object to check
+ * @returns obj is AttributesType
+ */
+function isAttributesType(obj: any): obj is AttributesType {
+
+  // Returns obj is AttributesType
+  return (
+
+    // Check if obj is instance of HtmlAttrbiutes
+    obj instanceof HtmlAttributes
+
+    // or object
+    || typeof obj == "object"
+  );
+}
