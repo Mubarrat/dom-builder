@@ -1,13 +1,3 @@
-> [!WARNING]
-> **Deprecated:** This library is no longer maintained.
-> 
-> A modern and more powerful alternative is now available: [Dom-Builder](https://github.com/Mubarrat/dom-builder).
-> 
-> Dom-Builder provides a cleaner, more flexible API for declaratively building HTML, SVG, and MathML using JavaScript.
-> It eliminates the need for fragile class-based logic and embraces idiomatic functional DOM composition.
-> 
-> You are strongly encouraged to migrate to [Dom-Builder](https://github.com/Mubarrat/dom-builder) for better maintainability, performance, and future-proof development.
-
 # HTML Builder
 
 ## Overview
