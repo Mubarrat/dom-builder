@@ -21,5 +21,6 @@
   },
   "publishConfig": {
     "@mubarrat:registry": "https://npm.pkg.github.com/"
-  }
+  },
+  "deprecated": "This package is no longer maintained. Please use 'dom-builder' instead: https://github.com/Mubarrat/dom-builder"
 }
