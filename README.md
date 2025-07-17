@@ -41,6 +41,9 @@ For the minimized version, the link is
 https://cdn.jsdelivr.net/gh/Mubarrat/html-builder@2.x/dist/html.min.js
 ```
 
+### For install via npm,
+Visit our [package page](https://github.com/Mubarrat/html-builder/pkgs/npm/html-builder).
+
 ## Guides
 
 For in-depth tutorials, detailed documentation, and step-by-step instructions, check out our [Wiki](https://github.com/Mubarrat/html-builder/wiki)!
