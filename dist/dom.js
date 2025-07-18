@@ -1,5 +1,5 @@
 /*!
- * Dom-Builder JavaScript Library v3.0.3
+ * Dom-Builder JavaScript Library v3.0.4
  * https://github.com/Mubarrat/dom-builder/
  * 
  * Released under the MIT license
@@ -15,7 +15,7 @@ function base_observable(baseFunction, subscriptions) {
 		[Symbol.observable]: "one-way",
 		target: baseFunction
 	});
-	baseFunction.bindSelect = selector => selector.computed(baseFunction).bind();
+	baseFunction.bindSelect = selector => (() => selector(baseFunction())).computed(baseFunction).bind();
 	baseFunction.bindMap = templateFn => baseFunction.bindSelect(collection => {
 		if (collection == null || typeof collection[Symbol.iterator] !== 'function')
 			throw new Error("bindMap requires an iterable (Array, Set, Generator, etc.)");
