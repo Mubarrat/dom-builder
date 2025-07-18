@@ -1,6 +1,6 @@
 {
 	"name": "@mubarrat/dom-builder",
-	"version": "3.0.1",
+	"version": "3.0.2",
 	"description": "A lightweight DOM builder library that creates HTML, SVG, and MathML elements using function calls. Supports attributes, event listeners, reactive updates, and nested child elements for declarative UI construction.",
 	"scripts": {
 		"build": "node build.js"
