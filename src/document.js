@@ -32,11 +32,11 @@ Object.defineProperties(Document.prototype, {
 					const tagName = prop.replace(/([A-Z])/g, "-$1").toLowerCase();
 					return (...args) => {
 						const element = this.createElementNS(namespace, tagName);
-						for (const arg of args.flat(Infinity)) {
+						for (const arg of flattenDeep(args)) {
 							if (arg === null || arg === undefined || arg === false) {
 								continue;
 							}
-							if (arg.constructor === Object) {
+							if (arg.constructor === Object && arg[Symbol.observable] !== undefined) {
 								for (const [attr, value] of Object.entries(arg)) {
 									if (attr === 'style') {
 										// Handle style binding and assignment
@@ -65,7 +65,7 @@ Object.defineProperties(Document.prototype, {
 									} else if (attr === 'on' && typeof value === 'object') {
 										// Attach multiple event listeners from an object
 										for (const [eventName, handler] of Object.entries(value)) {
-											for (const event of [handler].flat(Infinity)) {
+											for (const event of flattenDeep([handler])) {
 												if (typeof event === 'function') {
 													element.addEventListener(eventName.toLowerCase(), event);
 												}
@@ -73,7 +73,7 @@ Object.defineProperties(Document.prototype, {
 										}
 									} else if (attr.startsWith('on')) {
 										// Attach single event listener (e.g., onclick)
-										for (const event of [value].flat(Infinity)) {
+										for (const event of flattenDeep([value])) {
 											if (typeof event === 'function') {
 												element.addEventListener(attr.slice(2).toLowerCase(), event);
 											}
@@ -125,7 +125,7 @@ Object.defineProperties(Document.prototype, {
 										}
 									} else if (attr.toLowerCase().startsWith('ref')) {
 										// Call ref functions with the element as argument
-										for (const event of [value].flat(Infinity)) {
+										for (const event of flattenDeep([value])) {
 											if (typeof event === 'function') {
 												event.bind(element, element);
 											}
@@ -233,40 +233,42 @@ Object.defineProperties(Document.prototype, {
 									let projected = arg.target();
 									while (typeof projected === "function") projected = projected();
 									const fragment = this.createDocumentFragment();
-									const stack = [projected];
-									while (stack.length) {
-										let current = stack.pop();
-										if (current == null || current === false) continue;
-										while (typeof current === "function") current = current();
-										if (current && typeof current[Symbol.iterator] === 'function') {
-											stack.push(...Array.from(current).reverse());
-											continue;
-										}
-										const node = current instanceof Node ? current : this.createTextNode(String(current));
-										currentNodes.push(node);
-										fragment.appendChild(node);
+									for (const node of flattenDeepWithFunction([projected])) {
+										if (node == null || node === false) continue;
+										const domNode = node instanceof Node ? node : this.createTextNode(String(node));
+										currentNodes.push(domNode);
+										fragment.appendChild(domNode);
 									}
 									anchor.after(fragment);
 								};
-
 								update();
 								arg.target.subscribe(update);
 							} else {
 								// Append static or computed children (including arrays, functions, nodes, or primitives)
-								const stack = [arg];
-								while (stack.length) {
-									let current = stack.pop();
-									if (current == null || current === false) continue;
-									while (typeof current === "function") current = current();
-									if (current && typeof current[Symbol.iterator] === 'function') {
-										stack.push(...Array.from(current).reverse());
-										continue;
-									}
-									element.append(current instanceof Node ? current : this.createTextNode(String(current)));
+								for (const node of flattenDeepWithFunction([arg])) {
+									if (node == null || node === false) continue;
+									element.append(node instanceof Node ? node : this.createTextNode(String(node)));
 								}
 							}
 						}
 						return element;
+
+						function flattenDeep(iterable) {
+							return Array.from(iterable).flatMap(function recursive(x) {
+								return (x != null && typeof x !== 'string' && typeof x[Symbol.iterator] === 'function')
+									? Array.from(x).flatMap(recursive)
+									: [x];
+							});
+						}
+
+						function flattenDeepWithFunction(iterable) {
+							return Array.from(iterable).flatMap(function recursive(x) {
+								while (typeof x === 'function') x = x();
+								return (x != null && typeof x !== 'string' && typeof x[Symbol.iterator] === 'function')
+									? Array.from(x).flatMap(recursive)
+									: [x];
+							});
+						}
 					};
 				}
 			});
