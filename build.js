@@ -44,7 +44,7 @@ console.log(`Built successfully: ${outputFile}`);
 	try {
 		const minified = await terser.minify(finalCode, {
 			format: {
-				comments: 'all'
+				comments: "some"
 			}
 		});
 		if (minified.error) throw minified.error;

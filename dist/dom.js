@@ -20,10 +20,13 @@ function base_observable(baseFunction, subscriptions) {
 		target: baseFunction,
 		selector
 	});
-	baseFunction.bindMap = templateFn => baseFunction.bindSelect(arr => {
-		if (!Array.isArray(arr))
-			throw new Error("bindMap requires an array");
-		return arr.map(templateFn);
+	baseFunction.bindMap = templateFn => baseFunction.bindSelect(collection => {
+		if (collection == null || typeof collection[Symbol.iterator] !== 'function')
+			throw new Error("bindMap requires an iterable (Array, Set, Generator, etc.)");
+		const result = [];
+		for (const item of collection)
+			result.push(templateFn(item));
+		return result;
 	});
 	return baseFunction;
 }
@@ -244,6 +247,33 @@ Object.defineProperties(Document.prototype, {
 										}
 									}
 								}
+							} else if (arg?.[Symbol.observable] === "select" && typeof arg.target === "function") {
+								const anchor = this.createTextNode("");
+								element.append(anchor);
+								let currentNodes = [];
+								const update = () => {
+									for (const node of currentNodes) node.remove();
+									currentNodes = [];
+									let projected = arg.selector(arg.target());
+									while (typeof projected === "function") projected = projected();
+									const fragment = this.createDocumentFragment();
+									const stack = [projected];
+									while (stack.length) {
+										let current = stack.pop();
+										if (current == null || current === false) continue;
+										while (typeof current === "function") current = current();
+										if (Array.isArray(current)) {
+											stack.push(...current.reverse());
+											continue;
+										}
+										const node = current instanceof Node ? current : this.createTextNode(String(current));
+										currentNodes.push(node);
+										fragment.appendChild(node);
+									}
+									anchor.after(fragment);
+								};
+								update();
+								arg.target.subscribe(update);
 							} else {
 								const stack = [arg];
 								while (stack.length) {
@@ -306,157 +336,6 @@ function observable(initialValue = null) {
 	});
 	return obs;
 }
-
-Function.prototype.recreate = function(...observables) {
-	const fn = this;
-	let el = [fn(update)].flat(Infinity);
-	function update() {
-		const newEl = [fn(update)].flat(Infinity);
-		if (!el[0]) return;
-		el[0].before(...newEl);
-		el.forEach(node => node.remove());
-		el = newEl;
-		el.update = update;
-	}
-	observables.flat(Infinity).forEach(obs => obs.subscribe(update));
-	el.update = update;
-	return el;
-};
-
-Function.prototype.reupdate = function(...observables) {
-	const fn = this;
-	let el = fn(update);
-
-	function isSameNode(a, b) {
-		if (!a || !b) return false;
-		if (a.nodeType !== b.nodeType) return false;
-		if (a.nodeType === 3) // Text node
-			return a.textContent === b.textContent;
-		if (a.tagName !== b.tagName) return false;
-		const aId = a.id || undefined;
-		const bId = b.id || undefined;
-		if (aId !== bId) return false;
-		const aName = a.getAttribute('name') || undefined;
-		const bName = b.getAttribute('name') || undefined;
-		if (aName !== bName) return false;
-		return true;
-	}
-
-	function patchAttributes(oldEl, newEl) {
-		const oldAttrs = oldEl.attributes;
-		const newAttrs = newEl.attributes;
-
-		for (let i = oldAttrs.length - 1; i >= 0; i--) {
-			const attr = oldAttrs[i];
-			if (!newEl.hasAttribute(attr.name)) {
-				oldEl.removeAttribute(attr.name);
-			}
-		}
-
-		for (let i = 0; i < newAttrs.length; i++) {
-			const attr = newAttrs[i];
-			if (oldEl.getAttribute(attr.name) !== attr.value) {
-				oldEl.setAttribute(attr.name, attr.value);
-			}
-		}
-
-		if (oldEl instanceof HTMLInputElement || oldEl instanceof HTMLTextAreaElement || oldEl instanceof HTMLSelectElement) {
-			if ('value' in oldEl && oldEl.value !== newEl.value) {
-				oldEl.value = newEl.value;
-			}
-			if ('checked' in oldEl && oldEl.checked !== newEl.checked) {
-				oldEl.checked = newEl.checked;
-			}
-			if ('selected' in oldEl && oldEl.selected !== newEl.selected) {
-				oldEl.selected = newEl.selected;
-			}
-		}
-	}
-
-	function recursiveDiffPatch(parent, oldChildren, newChildren) {
-		oldChildren = Array.from(oldChildren);
-		newChildren = Array.from(newChildren);
-
-		const oldMap = oldChildren.map(node => ({ node, checked: false }));
-
-		let lastInsertedNode = null;
-
-		for (const newNode of newChildren) {
-			let found = oldMap.find(({ node, checked }) => !checked && isSameNode(node, newNode));
-			if (!found) {
-				if (lastInsertedNode) {
-					lastInsertedNode.after(newNode);
-				} else {
-					parent.prepend(newNode);
-				}
-				lastInsertedNode = newNode;
-			} else {
-				found.checked = true;
-				lastInsertedNode = found.node;
-				if (found.node.nodeType === 1) {
-					patchAttributes(found.node, newNode);
-					recursiveDiffPatch(found.node, found.node.childNodes, newNode.childNodes);
-				} else if (found.node.nodeType === 3) {
-					if (found.node.textContent !== newNode.textContent) {
-						found.node.textContent = newNode.textContent;
-					}
-				}
-			}
-		}
-
-		for (const { node, checked } of oldMap) {
-			if (!checked) {
-				node.remove();
-			}
-		}
-	}
-
-	function update() {
-		const newEl = fn(update);
-		const doc = (Array.isArray(el) ? el[0]?.ownerDocument : el?.ownerDocument) || document;
-
-		if (Array.isArray(el) && Array.isArray(newEl)) {
-			const parent = el[0]?.parentNode;
-			if (!parent) return;
-
-			recursiveDiffPatch(parent, el, newEl);
-
-		} else if (!Array.isArray(el) && !Array.isArray(newEl)) {
-			const parent = el.parentNode;
-			if (!parent) return;
-
-			if (!isSameNode(el, newEl)) {
-				parent.replaceChild(newEl, el);
-				el = newEl;
-			} else {
-				patchAttributes(el, newEl);
-				recursiveDiffPatch(parent, el.childNodes, newEl.childNodes);
-			}
-
-		} else {
-			if (Array.isArray(el)) {
-				const parent = el[0]?.parentNode;
-				if (!parent) return;
-				const anchor = doc.createComment('');
-				parent.insertBefore(anchor, el[0]);
-				el.flat(Infinity).forEach(node => parent.removeChild(node));
-				newEl.flat(Infinity).forEach(node => parent.insertBefore(node, anchor));
-				parent.removeChild(anchor);
-			} else {
-				const parent = el.parentNode;
-				if (!parent) return;
-				parent.replaceChild(newEl, el);
-			}
-			el = newEl;
-		}
-
-		el.update = update;
-	}
-
-	observables.flat(Infinity).forEach(obs => obs.subscribe(update));
-	el.update = update;
-	return el;
-};
 
 function validatable(validator = () => true, initialValue = null) {
 	const obs = observable(initialValue);

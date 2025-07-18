@@ -232,6 +232,33 @@ Object.defineProperties(Document.prototype, {
 										}
 									}
 								}
+							} else if (arg?.[Symbol.observable] === "select" && typeof arg.target === "function") {
+								const anchor = this.createTextNode("");
+								element.append(anchor);
+								let currentNodes = [];
+								const update = () => {
+									for (const node of currentNodes) node.remove();
+									currentNodes = [];
+									let projected = arg.selector(arg.target());
+									while (typeof projected === "function") projected = projected();
+									const fragment = this.createDocumentFragment();
+									const stack = [projected];
+									while (stack.length) {
+										let current = stack.pop();
+										if (current == null || current === false) continue;
+										while (typeof current === "function") current = current();
+										if (Array.isArray(current)) {
+											stack.push(...current.reverse());
+											continue;
+										}
+										const node = current instanceof Node ? current : this.createTextNode(String(current));
+										currentNodes.push(node);
+										fragment.appendChild(node);
+									}
+									anchor.after(fragment);
+								};
+								update();
+								arg.target.subscribe(update);
 							} else {
 								const stack = [arg];
 								while (stack.length) {

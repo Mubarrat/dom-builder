@@ -36,10 +36,13 @@ function base_observable(baseFunction, subscriptions) {
 		target: baseFunction,
 		selector
 	});
-	baseFunction.bindMap = templateFn => baseFunction.bindSelect(arr => {
-		if (!Array.isArray(arr))
-			throw new Error("bindMap requires an array");
-		return arr.map(templateFn);
+	baseFunction.bindMap = templateFn => baseFunction.bindSelect(collection => {
+		if (collection == null || typeof collection[Symbol.iterator] !== 'function')
+			throw new Error("bindMap requires an iterable (Array, Set, Generator, etc.)");
+		const result = [];
+		for (const item of collection)
+			result.push(templateFn(item));
+		return result;
 	});
 	return baseFunction;
 }
