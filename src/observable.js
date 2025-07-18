@@ -1,7 +1,7 @@
 /**
  * MIT License
  *
- * Copyright (c) 2023 Mubarrat
+ * Copyright (c) 2025 Mubarrat
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,46 +22,30 @@
  * SOFTWARE.
  */
 
-/**
- * Html class to manage HTML element creation
- */
-class Html {
-
-  /**
-   * Array to hold HtmlItem elements
-   */
-  elements: ChildrenType[];
-
-  /**
-   * Constructor to initialize HtmlItem elements
-   * @param elements The elemenets
-   */
-  constructor(...elements: ChildrenType[]) {
-
-    // Validate elements
-    if (!isChildrenType(elements)) {
-      
-      // let's throw an error
-      throw new Error("Invalid elements provided");
-    }
-
-    // Assign elements
-    this.elements = elements;
-  }
-
-  /**
-   * Method to build and return a DocumentFragment
-   * @returns Returns a DocumentFragment
-   */
-  build(): DocumentFragment {
-
-    // Create a DocumentFragment
-    const fragment = document.createDocumentFragment();
-
-    // Recursively append children to the DocumentFragment
-    appendChildren(fragment, ...this.elements);
-    
-    // Return the DocumentFragment
-    return fragment;
-  }
+function observable(initialValue = null) {
+	let value = initialValue;
+	const subscriptions = new Set(), elements = new Set();
+	function obs(newVal) {
+		if (arguments.length !== 0 && value !== newVal) {
+			value = newVal;
+			obs.notify();
+		}
+		return value;
+	}
+	obs.notify = () => (subscriptions.forEach(fn => fn(value)), elements.forEach(element => element.value = value));
+	obs.subscribe = fn => { subscriptions.add(fn); return () => subscriptions.delete(fn); };
+	obs.bind = () => ({
+		value: obs(),
+		refMVVM() { obs.elements.add(this) }
+	});
+	obs.bindToSource = (listener = 'oninput') => ({
+		value: obs(),
+		[listener]() { obs(this.value) }
+	});
+	obs.bindTwoWay = (listener = 'oninput') => ({
+		value: obs(),
+		[listener]() { obs(this.value) },
+		refMVVM() { obs.elements.add(this) }
+	});
+	return obs;
 }
