@@ -36,10 +36,28 @@ Object.defineProperties(Document.prototype, {
 							}
 							if (arg.constructor === Object) {
 								for (const [attr, value] of Object.entries(arg)) {
-									if (attr === 'class') {
-										element.className = value;
-									} else if (attr === 'style' && typeof value === 'object') {
-										Object.assign(element.style, value);
+									if (attr === 'style') {
+										switch (value?.[Symbol.observable]) {
+											case "one-way":
+												Object.assign(element.style, value.target());
+												value.target.subscribe(newStyle => Object.assign(element.style, newStyle));
+												break;
+											case "to-source":
+											case "two-way":
+												throw new Error("Two-way style binding not supported");
+											default:
+												if (typeof value === 'object') {
+													for (const [styleProp, styleValue] of Object.entries(value)) {
+														if (styleValue?.[Symbol.observable] === "one-way") {
+															element.style[styleProp] = styleValue.target();
+															styleValue.target.subscribe(v => element.style[styleProp] = v);
+														} else {
+															element.style[styleProp] = styleValue;
+														}
+													}
+												}
+												break;
+										}
 									} else if (attr === 'on' && typeof value === 'object') {
 										for (const [eventName, handler] of Object.entries(value)) {
 											for (const event of [handler].flat(Infinity)) {
@@ -57,7 +75,54 @@ Object.defineProperties(Document.prototype, {
 									} else if (attr === 'data' && typeof value === 'object') {
 										for (const name in value) {
 											const data = value[name];
-											element.setAttribute(`data-${name}`, typeof data === 'object' ? JSON.stringify(data) : data);
+											const setDatasetValue = v =>
+												element.dataset[name] = typeof v === 'object' ? JSON.stringify(v) : v;
+											switch (data?.[Symbol.observable]) {
+												case "one-way":
+													setDatasetValue(data.target());
+													data.target.subscribe(setDatasetValue);
+													break;
+												case "to-source":
+													setDatasetValue(data.target());
+													new MutationObserver(mutations => {
+														for (const mutation of mutations) {
+															if (mutation.type === 'attributes') {
+																const newValue = element.dataset[name];
+																try {
+																	data.target(JSON.parse(newValue));
+																} catch {
+																	data.target(newValue);
+																}
+															}
+														}
+													}).observe(element, {
+														attributes: true,
+														attributeFilter: [`data-${name}`]
+													});
+													break;
+												case "two-way":
+													setDatasetValue(data.target());
+													data.target.subscribe(setDatasetValue);
+													new MutationObserver(mutations => {
+														for (const mutation of mutations) {
+															if (mutation.type === 'attributes') {
+																const newValue = element.dataset[name];
+																try {
+																	data.target(JSON.parse(newValue));
+																} catch {
+																	data.target(newValue);
+																}
+															}
+														}
+													}).observe(element, {
+														attributes: true,
+														attributeFilter: [`data-${name}`]
+													});
+													break;
+												default:
+													setDatasetValue(data);
+													break;
+											}
 										}
 									} else if (attr.toLowerCase().startsWith('ref')) {
 										for (const event of [value].flat(Infinity)) {
@@ -65,8 +130,106 @@ Object.defineProperties(Document.prototype, {
 												event.bind(element, element);
 											}
 										}
-									} else if (value != null && value !== false) {
-										element.setAttribute(attr, typeof value === 'object' ? JSON.stringify(value) : value);
+									} else if (attr === 'value' && (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) {
+										switch (value?.[Symbol.observable]) {
+											case "one-way":
+												element.value = value.target();
+												value.target.subscribe(val => element.value = val);
+												break;
+											case "to-source":
+												element.value = value.target();
+												element.addEventListener(element instanceof HTMLSelectElement ? "change" : "input", () => value.target(element.value));
+												break;
+											case "two-way":
+												element.value = value.target();
+												value.target.subscribe(val => element.value = val);
+												element.addEventListener(element instanceof HTMLSelectElement ? "change" : "input", () => value.target(element.value));
+												break;
+											default:
+												element.value = value;
+												break;
+										}
+									} else if (attr === 'checked' && (element instanceof HTMLInputElement && (element.type === 'checkbox' || element.type === 'radio'))) {
+										switch (value?.[Symbol.observable]) {
+											case "one-way":
+												element.checked = value.target();
+												value.target.subscribe(val => element.checked = val);
+												break;
+											case "to-source":
+												element.checked = value.target();
+												element.addEventListener("change", () => value.target(element.checked));
+												break;
+											case "two-way":
+												element.checked = value.target();
+												value.target.subscribe(val => element.checked = val);
+												element.addEventListener("change", () => value.target(element.checked));
+												break;
+											default:
+												element.checked = value;
+												break;
+										}
+									} else if (value !== undefined) {
+										const setPropOrAttr = v => {
+											if (attr in element) {
+												element[attr] = v;
+											} else {
+												element.setAttribute(attr, typeof v === 'object' ? JSON.stringify(v) : v);
+											}
+										};
+										switch (value?.[Symbol.observable]) {
+											case "one-way":
+												setPropOrAttr(value.target());
+												value.target.subscribe(setPropOrAttr);
+												break;
+											case "to-source":
+												setPropOrAttr(value.target());
+												new MutationObserver(mutations => {
+													for (const mutation of mutations) {
+														let newVal;
+														if (attr in element) {
+															newVal = element[attr];
+														} else {
+															newVal = element.getAttribute(attr);
+														}
+														try {
+															value.target(JSON.parse(newVal));
+														} catch {
+															value.target(newVal);
+														}
+													}
+												}).observe(element, {
+													attributes: true,
+													attributeFilter: [attr],
+													attributeOldValue: true
+												});
+												break;
+											case "two-way":
+												setPropOrAttr(value.target());
+												value.target.subscribe(setPropOrAttr);
+												new MutationObserver(mutations => {
+													for (const mutation of mutations) {
+														let newVal;
+														if (attr in element) {
+															newVal = element[attr];
+														} else {
+															newVal = element.getAttribute(attr);
+														}
+														try {
+															value.target(JSON.parse(newVal));
+														} catch {
+															value.target(newVal);
+														}
+													}
+												}).observe(element, {
+													attributes: true,
+													attributeFilter: [attr],
+													attributeOldValue: true
+												});
+												break;
+											default:
+												setPropOrAttr(value);
+												break;
+										}
 									}
 								}
 							} else {

@@ -23,19 +23,7 @@
  */
 
 Function.prototype.computed = function(...observables) {
-    let value = this();
-    const subscriptions = new Set(), elements = new Set();
-    function obs() {
-        return value;
-    }
-    obs.notify = () => (subscriptions.forEach(fn => fn(value)), elements.forEach(element => element.value = value));
-    obs.subscribe = fn => { subscriptions.add(fn); return () => subscriptions.delete(fn); };
-    obs.bind = () => ({
-        value: obs(),
-        refMVVM() {
-            obs.elements.add(this);
-        }
-    });
-    observables.forEach(observable => observable.subscribe(() => { value = this(); obs.notify(); }));
+    const subscriptions = new Set(), obs = base_observable(this, subscriptions);
+    observables.forEach(observable => observable.subscribe(obs.notify));
     return obs;
 };

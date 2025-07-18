@@ -22,22 +22,24 @@
  * SOFTWARE.
  */
 
-function observable(initialValue = null) {
-	let value = initialValue;
-	const subscriptions = new Set(), obs = base_observable(function (newVal) {
-		if (arguments.length !== 0 && value !== newVal) {
-			value = newVal;
-			obs.notify();
-		}
-		return value;
-	}, subscriptions);
-	obs.bindToSource = () => ({
-		[Symbol.observable]: "to-source",
-		target: obs
+Symbol.observable = Symbol('observable');
+
+function base_observable(baseFunction, subscriptions) {
+	baseFunction.subscribe = fn => { subscriptions.add(fn); return () => subscriptions.delete(fn); };
+    baseFunction.notify = () => subscriptions.forEach(fn => fn(baseFunction()));
+	baseFunction.bind = () => ({
+		[Symbol.observable]: "one-way",
+		target: baseFunction
 	});
-	obs.bindTwoWay = () => ({
-		[Symbol.observable]: "two-way",
-		target: obs
+	baseFunction.bindSelect = selector => ({
+		[Symbol.observable]: "select",
+		target: baseFunction,
+		selector
 	});
-	return obs;
+	baseFunction.bindMap = templateFn => baseFunction.bindSelect(arr => {
+		if (!Array.isArray(arr))
+			throw new Error("bindMap requires an array");
+		return arr.map(templateFn);
+	});
+	return baseFunction;
 }
