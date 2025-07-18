@@ -36,7 +36,7 @@ Object.defineProperties(Document.prototype, {
 							if (arg === null || arg === undefined || arg === false) {
 								continue;
 							}
-							if (arg.constructor === Object && arg[Symbol.observable] !== undefined) {
+							if (arg.constructor === Object && arg[Symbol.observable] === undefined && arg[Symbol.iterator] === undefined) {
 								for (const [attr, value] of Object.entries(arg)) {
 									if (attr === 'style') {
 										// Handle style binding and assignment

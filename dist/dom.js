@@ -1,5 +1,5 @@
 /*!
- * Dom-Builder JavaScript Library v3.0.2
+ * Dom-Builder JavaScript Library v3.0.3
  * https://github.com/Mubarrat/dom-builder/
  * 
  * Released under the MIT license
@@ -47,7 +47,7 @@ Object.defineProperties(Document.prototype, {
 							if (arg === null || arg === undefined || arg === false) {
 								continue;
 							}
-							if (arg.constructor === Object && arg[Symbol.observable] !== undefined) {
+							if (arg.constructor === Object && arg[Symbol.observable] === undefined && arg[Symbol.iterator] === undefined) {
 								for (const [attr, value] of Object.entries(arg)) {
 									if (attr === 'style') {
 										// Handle style binding and assignment
