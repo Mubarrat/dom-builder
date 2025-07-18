@@ -18,8 +18,8 @@
 ## What's New in v3+
 
 * Renamed to **Dom-Builder** to better reflect its focus on the DOM.
-* Removed the `build()` pattern — declarative usage is now the default.
-* Introduced built-in MVVM-style utilities like `observable`, `computed`, and `reupdate`.
+* Declarative usage is now the default — no more `build()` method.
+* Introduced built-in MVVM-style utilities like `observable`, `computed`, and powerful binding mechanisms such as `bind`, `bindSelect`, and `bindMap`.
 * Removed long-form `new HtmlItem(...)` syntax — replaced with concise `$html.div(...)` style.
 * Smaller, faster, and framework-agnostic.
 
@@ -29,7 +29,7 @@
 
 ### Download
 
-Download our latest [release files](https://github.com/Mubarrat/dom-builder/releases) from this GitHub repository.
+Download the latest [release files](https://github.com/Mubarrat/dom-builder/releases) from this GitHub repository.
 
 #### Contents
 
@@ -43,14 +43,14 @@ dom-builder
 
 ### CDN
 
-```
-https://cdn.jsdelivr.net/gh/Mubarrat/dom-builder@3.x/dist/dom.js
+```html
+<script src="https://cdn.jsdelivr.net/gh/Mubarrat/dom-builder@3.x/dist/dom.js"></script>
 ```
 
 Minified:
 
-```
-https://cdn.jsdelivr.net/gh/Mubarrat/dom-builder@3.x/dist/dom.min.js
+```html
+<script src="https://cdn.jsdelivr.net/gh/Mubarrat/dom-builder@3.x/dist/dom.min.js"></script>
 ```
 
 ### GitHub Package
@@ -64,7 +64,7 @@ Use the [CDN](#cdn) or [Releases](https://github.com/Mubarrat/dom-builder/releas
 
 ## Migration from HTML Builder
 
-There is **no major breaking change** between `html-builder` and `dom-builder`.
+There are **no major breaking changes** between `html-builder` and `dom-builder`.
 
 ### Key Points
 
@@ -72,9 +72,9 @@ There is **no major breaking change** between `html-builder` and `dom-builder`.
 * The majority of the API remains **declarative and unchanged**.
 * The `build()` method is **no longer needed** in `dom-builder`.
 * The long-form `new HtmlItem(...)` syntax is **removed** — use concise `$html.div(...)`-style instead.
-* The new version introduces **optional MVVM-style utilities** like `observable`, `computed`, and `reupdate`.
+* The new version introduces **optional MVVM-style utilities** like `observable`, `computed`, `bind`, `bindSelect`, and `bindMap`.
 
-See [Migration from html-builder](https://github.com/Mubarrat/dom-builder/wiki/Migration-from-html-builder) for details.
+See [Migration from html-builder](https://github.com/Mubarrat/dom-builder/wiki/Migration-from-html-builder) for more details.
 
 > [!TIP]
 > Consider adopting MVVM-style view models for better state management.
