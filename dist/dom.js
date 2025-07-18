@@ -1,5 +1,5 @@
 /*!
- * Dom-Builder JavaScript Library v3.0.4
+ * Dom-Builder JavaScript Library v3.0.5
  * https://github.com/Mubarrat/dom-builder/
  * 
  * Released under the MIT license
@@ -266,7 +266,7 @@ Object.defineProperties(Document.prototype, {
 
 						function flattenDeep(iterable) {
 							return Array.from(iterable).flatMap(function recursive(x) {
-								return (x != null && typeof x !== 'string' && typeof x[Symbol.iterator] === 'function')
+								return (x != null && typeof x !== 'string' && !(x instanceof EventTarget) && typeof x[Symbol.iterator] === 'function')
 									? Array.from(x).flatMap(recursive)
 									: [x];
 							});
@@ -275,7 +275,7 @@ Object.defineProperties(Document.prototype, {
 						function flattenDeepWithFunction(iterable) {
 							return Array.from(iterable).flatMap(function recursive(x) {
 								while (typeof x === 'function') x = x();
-								return (x != null && typeof x !== 'string' && typeof x[Symbol.iterator] === 'function')
+								return (x != null && typeof x !== 'string' && !(x instanceof EventTarget) && typeof x[Symbol.iterator] === 'function')
 									? Array.from(x).flatMap(recursive)
 									: [x];
 							});
