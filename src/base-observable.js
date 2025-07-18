@@ -36,9 +36,14 @@ function base_observable(baseFunction, subscriptions) {
 		if (collection == null || typeof collection[Symbol.iterator] !== 'function')
 			throw new Error("bindMap requires an iterable (Array, Set, Generator, etc.)");
 		const result = [];
+		let index = 0;
 		for (const item of collection)
-			result.push(templateFn(item));
+			result.push(templateFn(item, index++));
 		return result;
 	});
 	return baseFunction;
 }
+
+Array.prototype.bindSelect = function(selector) {
+	return (() => selector(...this.map(observable => observable()))).computed(...this).bind();
+};

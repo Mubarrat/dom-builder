@@ -1,5 +1,5 @@
 /*!
- * Dom-Builder JavaScript Library v3.0.5
+ * Dom-Builder JavaScript Library v3.0.6
  * https://github.com/Mubarrat/dom-builder/
  * 
  * Released under the MIT license
@@ -20,12 +20,17 @@ function base_observable(baseFunction, subscriptions) {
 		if (collection == null || typeof collection[Symbol.iterator] !== 'function')
 			throw new Error("bindMap requires an iterable (Array, Set, Generator, etc.)");
 		const result = [];
+		let index = 0;
 		for (const item of collection)
-			result.push(templateFn(item));
+			result.push(templateFn(item, index++));
 		return result;
 	});
 	return baseFunction;
 }
+
+Array.prototype.bindSelect = function(selector) {
+	return (() => selector(...this.map(observable => observable()))).computed(...this).bind();
+};
 
 Function.prototype.computed = function(...observables) {
     const subscriptions = new Set(), obs = base_observable(this, subscriptions);
@@ -36,7 +41,7 @@ Function.prototype.computed = function(...observables) {
 Object.defineProperties(Document.prototype, {
 	$dom: {
 		value(namespace) {
-			// Proxy allows dynamic tag creation: doc.$html.div(), doc.$svg.circle(), etc.
+			// Proxy allows dynamic tag creation: $html.div(), $svg.circle(), etc.
 			return new Proxy({}, {
 				get: (_, prop) => {
 					// Convert camelCase to kebab-case for tag names (e.g., myTag -> my-tag)
@@ -50,28 +55,131 @@ Object.defineProperties(Document.prototype, {
 							if (arg.constructor === Object && arg[Symbol.observable] === undefined && arg[Symbol.iterator] === undefined) {
 								for (const [attr, value] of Object.entries(arg)) {
 									if (attr === 'style') {
-										// Handle style binding and assignment
-										switch (value?.[Symbol.observable]) {
-											case "one-way":
-												Object.assign(element.style, value.target());
-												value.target.subscribe(newStyle => Object.assign(element.style, newStyle));
-												break;
-											case "to-source":
-											case "two-way":
-												throw new Error("Two-way style binding not supported");
-											default:
-												// Support for plain object or observable style properties
-												if (typeof value === 'object') {
-													for (const [styleProp, styleValue] of Object.entries(value)) {
-														if (styleValue?.[Symbol.observable] === "one-way") {
-															element.style[styleProp] = styleValue.target();
-															styleValue.target.subscribe(v => element.style[styleProp] = v);
-														} else {
-															element.style[styleProp] = styleValue;
-														}
-													}
+										// Case 1: Full style object is observable
+										if (value?.[Symbol.observable]) {
+											const mode = value[Symbol.observable];
+											const initial = value.target();
+											
+											// Case 1a: Observable returns string
+											if (typeof initial === 'string') {
+												const setStyleAttr = v => element.setAttribute('style', v);
+
+												switch (mode) {
+													case "one-way":
+														setStyleAttr(initial);
+														value.target.subscribe(setStyleAttr);
+														break;
+
+													case "to-source":
+														setStyleAttr(initial);
+														new MutationObserver(() => {
+															value.target(element.getAttribute('style') || '');
+														}).observe(element, {
+															attributes: true,
+															attributeFilter: ['style']
+														});
+														break;
+
+													case "two-way":
+														setStyleAttr(initial);
+														value.target.subscribe(setStyleAttr);
+														new MutationObserver(() => {
+															value.target(element.getAttribute('style') || '');
+														}).observe(element, {
+															attributes: true,
+															attributeFilter: ['style']
+														});
+														break;
+
+													default:
+														setStyleAttr(initial);
+														break;
 												}
-												break;
+												return; // done
+											}
+
+											// Case 1b: Observable returns object
+											const getFullStyle = () => {
+												const result = {};
+												for (const prop of element.style) {
+													result[prop] = element.style[prop];
+												}
+												return result;
+											};
+
+											const applyFullStyle = v => Object.assign(element.style, v);
+
+											switch (mode) {
+												case "one-way":
+													applyFullStyle(initial);
+													value.target.subscribe(applyFullStyle);
+													break;
+
+												case "to-source":
+													applyFullStyle(initial);
+													new MutationObserver(() => {
+														value.target(getFullStyle());
+													}).observe(element, { attributes: true, attributeFilter: ["style"] });
+													break;
+
+												case "two-way":
+													applyFullStyle(initial);
+													value.target.subscribe(applyFullStyle);
+													new MutationObserver(() => {
+														value.target(getFullStyle());
+													}).observe(element, { attributes: true, attributeFilter: ["style"] });
+													break;
+
+												default:
+													applyFullStyle(initial);
+													break;
+											}
+										}
+
+										// Case 2: Style is plain string → assign directly to attribute
+										else if (typeof value === 'string') {
+											element.setAttribute('style', value);
+										}
+
+										// Case 3: Per-style-property observable map
+										else if (typeof value === 'object') {
+											for (const [styleProp, styleValue] of Object.entries(value)) {
+												switch (styleValue?.[Symbol.observable]) {
+													case "one-way": {
+														const setStyleValue = v => element.style[styleProp] = v;
+														setStyleValue(styleValue.target());
+														styleValue.target.subscribe(setStyleValue);
+														break;
+													}
+													case "to-source": {
+														const getStyleValue = () => element.style[styleProp];
+														styleValue.target(getStyleValue());
+														new MutationObserver(() => {
+															styleValue.target(getStyleValue());
+														}).observe(element, {
+															attributes: true,
+															attributeFilter: ['style']
+														});
+														break;
+													}
+													case "two-way": {
+														const getStyleValue = () => element.style[styleProp];
+														const setStyleValue = v => element.style[styleProp] = v;
+														setStyleValue(styleValue.target());
+														styleValue.target.subscribe(setStyleValue);
+														new MutationObserver(() => {
+															styleValue.target(getStyleValue());
+														}).observe(element, {
+															attributes: true,
+															attributeFilter: ['style']
+														});
+														break;
+													}
+													default:
+														element.style[styleProp] = styleValue;
+														break;
+												}
+											}
 										}
 									} else if (attr === 'on' && typeof value === 'object') {
 										// Attach multiple event listeners from an object
