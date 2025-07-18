@@ -6,21 +6,31 @@
  * https://github.com/Mubarrat/dom-builder/blob/main/LICENSE
  */
 
+Symbol.observable = Symbol('observable');
+
+function base_observable(baseFunction, subscriptions) {
+	baseFunction.subscribe = fn => { subscriptions.add(fn); return () => subscriptions.delete(fn); };
+    baseFunction.notify = () => subscriptions.forEach(fn => fn(baseFunction()));
+	baseFunction.bind = () => ({
+		[Symbol.observable]: "one-way",
+		target: baseFunction
+	});
+	baseFunction.bindSelect = selector => ({
+		[Symbol.observable]: "select",
+		target: baseFunction,
+		selector
+	});
+	baseFunction.bindMap = templateFn => baseFunction.bindSelect(arr => {
+		if (!Array.isArray(arr))
+			throw new Error("bindMap requires an array");
+		return arr.map(templateFn);
+	});
+	return baseFunction;
+}
+
 Function.prototype.computed = function(...observables) {
-    let value = this();
-    const subscriptions = new Set(), elements = new Set();
-    function obs() {
-        return value;
-    }
-    obs.notify = () => (subscriptions.forEach(fn => fn(value)), elements.forEach(element => element.value = value));
-    obs.subscribe = fn => { subscriptions.add(fn); return () => subscriptions.delete(fn); };
-    obs.bind = () => ({
-        value: obs(),
-        refMVVM() {
-            obs.elements.add(this);
-        }
-    });
-    observables.forEach(observable => observable.subscribe(() => { value = this(); obs.notify(); }));
+    const subscriptions = new Set(), obs = base_observable(this, subscriptions);
+    observables.forEach(observable => observable.subscribe(obs.notify));
     return obs;
 };
 
@@ -38,10 +48,28 @@ Object.defineProperties(Document.prototype, {
 							}
 							if (arg.constructor === Object) {
 								for (const [attr, value] of Object.entries(arg)) {
-									if (attr === 'class') {
-										element.className = value;
-									} else if (attr === 'style' && typeof value === 'object') {
-										Object.assign(element.style, value);
+									if (attr === 'style') {
+										switch (value?.[Symbol.observable]) {
+											case "one-way":
+												Object.assign(element.style, value.target());
+												value.target.subscribe(newStyle => Object.assign(element.style, newStyle));
+												break;
+											case "to-source":
+											case "two-way":
+												throw new Error("Two-way style binding not supported");
+											default:
+												if (typeof value === 'object') {
+													for (const [styleProp, styleValue] of Object.entries(value)) {
+														if (styleValue?.[Symbol.observable] === "one-way") {
+															element.style[styleProp] = styleValue.target();
+															styleValue.target.subscribe(v => element.style[styleProp] = v);
+														} else {
+															element.style[styleProp] = styleValue;
+														}
+													}
+												}
+												break;
+										}
 									} else if (attr === 'on' && typeof value === 'object') {
 										for (const [eventName, handler] of Object.entries(value)) {
 											for (const event of [handler].flat(Infinity)) {
@@ -59,7 +87,54 @@ Object.defineProperties(Document.prototype, {
 									} else if (attr === 'data' && typeof value === 'object') {
 										for (const name in value) {
 											const data = value[name];
-											element.setAttribute(`data-${name}`, typeof data === 'object' ? JSON.stringify(data) : data);
+											const setDatasetValue = v =>
+												element.dataset[name] = typeof v === 'object' ? JSON.stringify(v) : v;
+											switch (data?.[Symbol.observable]) {
+												case "one-way":
+													setDatasetValue(data.target());
+													data.target.subscribe(setDatasetValue);
+													break;
+												case "to-source":
+													setDatasetValue(data.target());
+													new MutationObserver(mutations => {
+														for (const mutation of mutations) {
+															if (mutation.type === 'attributes') {
+																const newValue = element.dataset[name];
+																try {
+																	data.target(JSON.parse(newValue));
+																} catch {
+																	data.target(newValue);
+																}
+															}
+														}
+													}).observe(element, {
+														attributes: true,
+														attributeFilter: [`data-${name}`]
+													});
+													break;
+												case "two-way":
+													setDatasetValue(data.target());
+													data.target.subscribe(setDatasetValue);
+													new MutationObserver(mutations => {
+														for (const mutation of mutations) {
+															if (mutation.type === 'attributes') {
+																const newValue = element.dataset[name];
+																try {
+																	data.target(JSON.parse(newValue));
+																} catch {
+																	data.target(newValue);
+																}
+															}
+														}
+													}).observe(element, {
+														attributes: true,
+														attributeFilter: [`data-${name}`]
+													});
+													break;
+												default:
+													setDatasetValue(data);
+													break;
+											}
 										}
 									} else if (attr.toLowerCase().startsWith('ref')) {
 										for (const event of [value].flat(Infinity)) {
@@ -67,8 +142,106 @@ Object.defineProperties(Document.prototype, {
 												event.bind(element, element);
 											}
 										}
-									} else if (value != null && value !== false) {
-										element.setAttribute(attr, typeof value === 'object' ? JSON.stringify(value) : value);
+									} else if (attr === 'value' && (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) {
+										switch (value?.[Symbol.observable]) {
+											case "one-way":
+												element.value = value.target();
+												value.target.subscribe(val => element.value = val);
+												break;
+											case "to-source":
+												element.value = value.target();
+												element.addEventListener(element instanceof HTMLSelectElement ? "change" : "input", () => value.target(element.value));
+												break;
+											case "two-way":
+												element.value = value.target();
+												value.target.subscribe(val => element.value = val);
+												element.addEventListener(element instanceof HTMLSelectElement ? "change" : "input", () => value.target(element.value));
+												break;
+											default:
+												element.value = value;
+												break;
+										}
+									} else if (attr === 'checked' && (element instanceof HTMLInputElement && (element.type === 'checkbox' || element.type === 'radio'))) {
+										switch (value?.[Symbol.observable]) {
+											case "one-way":
+												element.checked = value.target();
+												value.target.subscribe(val => element.checked = val);
+												break;
+											case "to-source":
+												element.checked = value.target();
+												element.addEventListener("change", () => value.target(element.checked));
+												break;
+											case "two-way":
+												element.checked = value.target();
+												value.target.subscribe(val => element.checked = val);
+												element.addEventListener("change", () => value.target(element.checked));
+												break;
+											default:
+												element.checked = value;
+												break;
+										}
+									} else if (value !== undefined) {
+										const setPropOrAttr = v => {
+											if (attr in element) {
+												element[attr] = v;
+											} else {
+												element.setAttribute(attr, typeof v === 'object' ? JSON.stringify(v) : v);
+											}
+										};
+										switch (value?.[Symbol.observable]) {
+											case "one-way":
+												setPropOrAttr(value.target());
+												value.target.subscribe(setPropOrAttr);
+												break;
+											case "to-source":
+												setPropOrAttr(value.target());
+												new MutationObserver(mutations => {
+													for (const mutation of mutations) {
+														let newVal;
+														if (attr in element) {
+															newVal = element[attr];
+														} else {
+															newVal = element.getAttribute(attr);
+														}
+														try {
+															value.target(JSON.parse(newVal));
+														} catch {
+															value.target(newVal);
+														}
+													}
+												}).observe(element, {
+													attributes: true,
+													attributeFilter: [attr],
+													attributeOldValue: true
+												});
+												break;
+											case "two-way":
+												setPropOrAttr(value.target());
+												value.target.subscribe(setPropOrAttr);
+												new MutationObserver(mutations => {
+													for (const mutation of mutations) {
+														let newVal;
+														if (attr in element) {
+															newVal = element[attr];
+														} else {
+															newVal = element.getAttribute(attr);
+														}
+														try {
+															value.target(JSON.parse(newVal));
+														} catch {
+															value.target(newVal);
+														}
+													}
+												}).observe(element, {
+													attributes: true,
+													attributeFilter: [attr],
+													attributeOldValue: true
+												});
+												break;
+											default:
+												setPropOrAttr(value);
+												break;
+										}
 									}
 								}
 							} else {
@@ -116,28 +289,20 @@ Object.defineProperties(Document.prototype, {
 
 function observable(initialValue = null) {
 	let value = initialValue;
-	const subscriptions = new Set(), elements = new Set();
-	function obs(newVal) {
+	const subscriptions = new Set(), obs = base_observable(function (newVal) {
 		if (arguments.length !== 0 && value !== newVal) {
 			value = newVal;
 			obs.notify();
 		}
 		return value;
-	}
-	obs.notify = () => (subscriptions.forEach(fn => fn(value)), elements.forEach(element => element.value = value));
-	obs.subscribe = fn => { subscriptions.add(fn); return () => subscriptions.delete(fn); };
-	obs.bind = () => ({
-		value: obs(),
-		refMVVM() { obs.elements.add(this) }
+	}, subscriptions);
+	obs.bindToSource = () => ({
+		[Symbol.observable]: "to-source",
+		target: obs
 	});
-	obs.bindToSource = (listener = 'oninput') => ({
-		value: obs(),
-		[listener]() { obs(this.value) }
-	});
-	obs.bindTwoWay = (listener = 'oninput') => ({
-		value: obs(),
-		[listener]() { obs(this.value) },
-		refMVVM() { obs.elements.add(this) }
+	obs.bindTwoWay = () => ({
+		[Symbol.observable]: "two-way",
+		target: obs
 	});
 	return obs;
 }
