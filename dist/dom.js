@@ -1,5 +1,5 @@
 /*!
- * Dom-Builder JavaScript Library v3.0.0
+ * Dom-Builder JavaScript Library v3.0.1
  * https://github.com/Mubarrat/dom-builder/
  * 
  * Released under the MIT license
@@ -15,11 +15,7 @@ function base_observable(baseFunction, subscriptions) {
 		[Symbol.observable]: "one-way",
 		target: baseFunction
 	});
-	baseFunction.bindSelect = selector => ({
-		[Symbol.observable]: "select",
-		target: baseFunction,
-		selector
-	});
+	baseFunction.bindSelect = selector => selector.computed(baseFunction).bind();
 	baseFunction.bindMap = templateFn => baseFunction.bindSelect(collection => {
 		if (collection == null || typeof collection[Symbol.iterator] !== 'function')
 			throw new Error("bindMap requires an iterable (Array, Set, Generator, etc.)");
@@ -40,8 +36,10 @@ Function.prototype.computed = function(...observables) {
 Object.defineProperties(Document.prototype, {
 	$dom: {
 		value(namespace) {
+			// Proxy allows dynamic tag creation: doc.$html.div(), doc.$svg.circle(), etc.
 			return new Proxy({}, {
 				get: (_, prop) => {
+					// Convert camelCase to kebab-case for tag names (e.g., myTag -> my-tag)
 					const tagName = prop.replace(/([A-Z])/g, "-$1").toLowerCase();
 					return (...args) => {
 						const element = this.createElementNS(namespace, tagName);
@@ -52,6 +50,7 @@ Object.defineProperties(Document.prototype, {
 							if (arg.constructor === Object) {
 								for (const [attr, value] of Object.entries(arg)) {
 									if (attr === 'style') {
+										// Handle style binding and assignment
 										switch (value?.[Symbol.observable]) {
 											case "one-way":
 												Object.assign(element.style, value.target());
@@ -61,6 +60,7 @@ Object.defineProperties(Document.prototype, {
 											case "two-way":
 												throw new Error("Two-way style binding not supported");
 											default:
+												// Support for plain object or observable style properties
 												if (typeof value === 'object') {
 													for (const [styleProp, styleValue] of Object.entries(value)) {
 														if (styleValue?.[Symbol.observable] === "one-way") {
@@ -74,6 +74,7 @@ Object.defineProperties(Document.prototype, {
 												break;
 										}
 									} else if (attr === 'on' && typeof value === 'object') {
+										// Attach multiple event listeners from an object
 										for (const [eventName, handler] of Object.entries(value)) {
 											for (const event of [handler].flat(Infinity)) {
 												if (typeof event === 'function') {
@@ -82,16 +83,17 @@ Object.defineProperties(Document.prototype, {
 											}
 										}
 									} else if (attr.startsWith('on')) {
+										// Attach single event listener (e.g., onclick)
 										for (const event of [value].flat(Infinity)) {
 											if (typeof event === 'function') {
 												element.addEventListener(attr.slice(2).toLowerCase(), event);
 											}
 										}
 									} else if (attr === 'data' && typeof value === 'object') {
+										// Handle data-* attributes, including observable bindings
 										for (const name in value) {
 											const data = value[name];
-											const setDatasetValue = v =>
-												element.dataset[name] = typeof v === 'object' ? JSON.stringify(v) : v;
+											const setDatasetValue = v => element.dataset[name] = typeof v === 'object' ? JSON.stringify(v) : v;
 											switch (data?.[Symbol.observable]) {
 												case "one-way":
 													setDatasetValue(data.target());
@@ -99,16 +101,13 @@ Object.defineProperties(Document.prototype, {
 													break;
 												case "to-source":
 													setDatasetValue(data.target());
-													new MutationObserver(mutations => {
-														for (const mutation of mutations) {
-															if (mutation.type === 'attributes') {
-																const newValue = element.dataset[name];
-																try {
-																	data.target(JSON.parse(newValue));
-																} catch {
-																	data.target(newValue);
-																}
-															}
+													// Listen for changes to data-* attribute and update observable
+													new MutationObserver(() => {
+														const newValue = element.dataset[name];
+														try {
+															data.target(JSON.parse(newValue));
+														} catch {
+															data.target(newValue);
 														}
 													}).observe(element, {
 														attributes: true,
@@ -118,16 +117,12 @@ Object.defineProperties(Document.prototype, {
 												case "two-way":
 													setDatasetValue(data.target());
 													data.target.subscribe(setDatasetValue);
-													new MutationObserver(mutations => {
-														for (const mutation of mutations) {
-															if (mutation.type === 'attributes') {
-																const newValue = element.dataset[name];
-																try {
-																	data.target(JSON.parse(newValue));
-																} catch {
-																	data.target(newValue);
-																}
-															}
+													new MutationObserver(() => {
+														const newValue = element.dataset[name];
+														try {
+															data.target(JSON.parse(newValue));
+														} catch {
+															data.target(newValue);
 														}
 													}).observe(element, {
 														attributes: true,
@@ -140,12 +135,14 @@ Object.defineProperties(Document.prototype, {
 											}
 										}
 									} else if (attr.toLowerCase().startsWith('ref')) {
+										// Call ref functions with the element as argument
 										for (const event of [value].flat(Infinity)) {
 											if (typeof event === 'function') {
 												event.bind(element, element);
 											}
 										}
 									} else if (attr === 'value' && (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) {
+										// Special handling for value binding on form elements
 										switch (value?.[Symbol.observable]) {
 											case "one-way":
 												element.value = value.target();
@@ -165,6 +162,7 @@ Object.defineProperties(Document.prototype, {
 												break;
 										}
 									} else if (attr === 'checked' && (element instanceof HTMLInputElement && (element.type === 'checkbox' || element.type === 'radio'))) {
+										// Special handling for checked binding on checkbox/radio
 										switch (value?.[Symbol.observable]) {
 											case "one-way":
 												element.checked = value.target();
@@ -184,6 +182,7 @@ Object.defineProperties(Document.prototype, {
 												break;
 										}
 									} else if (value !== undefined) {
+										// Fallback: set as property if possible, else as attribute
 										const setPropOrAttr = v => {
 											if (attr in element) {
 												element[attr] = v;
@@ -198,19 +197,13 @@ Object.defineProperties(Document.prototype, {
 												break;
 											case "to-source":
 												setPropOrAttr(value.target());
-												new MutationObserver(mutations => {
-													for (const mutation of mutations) {
-														let newVal;
-														if (attr in element) {
-															newVal = element[attr];
-														} else {
-															newVal = element.getAttribute(attr);
-														}
-														try {
-															value.target(JSON.parse(newVal));
-														} catch {
-															value.target(newVal);
-														}
+												// Listen for attribute/property changes and update observable
+												new MutationObserver(() => {
+													let newVal = attr in element ? element[attr] : element.getAttribute(attr);
+													try {
+														value.target(JSON.parse(newVal));
+													} catch {
+														value.target(newVal);
 													}
 												}).observe(element, {
 													attributes: true,
@@ -221,19 +214,12 @@ Object.defineProperties(Document.prototype, {
 											case "two-way":
 												setPropOrAttr(value.target());
 												value.target.subscribe(setPropOrAttr);
-												new MutationObserver(mutations => {
-													for (const mutation of mutations) {
-														let newVal;
-														if (attr in element) {
-															newVal = element[attr];
-														} else {
-															newVal = element.getAttribute(attr);
-														}
-														try {
-															value.target(JSON.parse(newVal));
-														} catch {
-															value.target(newVal);
-														}
+												new MutationObserver(() => {
+													let newVal = attr in element ? element[attr] : element.getAttribute(attr);
+													try {
+														value.target(JSON.parse(newVal));
+													} catch {
+														value.target(newVal);
 													}
 												}).observe(element, {
 													attributes: true,
@@ -247,14 +233,15 @@ Object.defineProperties(Document.prototype, {
 										}
 									}
 								}
-							} else if (arg?.[Symbol.observable] === "select" && typeof arg.target === "function") {
+							} else if (arg?.[Symbol.observable] === "one-way" && typeof arg.target === "function") {
+								// Observable content: replace children when observable changes
 								const anchor = this.createTextNode("");
 								element.append(anchor);
 								let currentNodes = [];
 								const update = () => {
 									for (const node of currentNodes) node.remove();
 									currentNodes = [];
-									let projected = arg.selector(arg.target());
+									let projected = arg.target();
 									while (typeof projected === "function") projected = projected();
 									const fragment = this.createDocumentFragment();
 									const stack = [projected];
@@ -262,8 +249,8 @@ Object.defineProperties(Document.prototype, {
 										let current = stack.pop();
 										if (current == null || current === false) continue;
 										while (typeof current === "function") current = current();
-										if (Array.isArray(current)) {
-											stack.push(...current.reverse());
+										if (current && typeof current[Symbol.iterator] === 'function') {
+											stack.push(...Array.from(current).reverse());
 											continue;
 										}
 										const node = current instanceof Node ? current : this.createTextNode(String(current));
@@ -272,23 +259,21 @@ Object.defineProperties(Document.prototype, {
 									}
 									anchor.after(fragment);
 								};
+
 								update();
 								arg.target.subscribe(update);
 							} else {
+								// Append static or computed children (including arrays, functions, nodes, or primitives)
 								const stack = [arg];
 								while (stack.length) {
 									let current = stack.pop();
 									if (current == null || current === false) continue;
 									while (typeof current === "function") current = current();
-									if (Array.isArray(current)) {
-										stack.push(...current.reverse());
+									if (current && typeof current[Symbol.iterator] === 'function') {
+										stack.push(...Array.from(current).reverse());
 										continue;
 									}
-									if (current instanceof Node) {
-										element.append(current);
-									} else {
-										element.append(this.createTextNode(String(current)));
-									}
+									element.append(current instanceof Node ? current : this.createTextNode(String(current)));
 								}
 							}
 						}
