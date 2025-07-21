@@ -24,20 +24,17 @@
 
 function observable(initialValue = null) {
 	let value = initialValue;
-	const subscriptions = new Set(), obs = base_observable(function (newVal) {
+	const obs = base_observable(function (newVal) {
 		if (arguments.length !== 0 && value !== newVal) {
 			value = newVal;
 			obs.notify();
 		}
 		return value;
-	}, subscriptions);
-	obs.bindToSource = () => ({
-		[Symbol.observable]: "to-source",
-		target: obs
 	});
-	obs.bindTwoWay = () => ({
-		[Symbol.observable]: "two-way",
-		target: obs
-	});
+	obs[Symbol.observable] = "two-way";
+	obs.bindTo = Object.assign((...args) => obs(...args), { [Symbol.observable]: "to" });
+	obs.bindFrom = Object.assign((...args) => obs(...args), { [Symbol.observable]: "from" });
+	Object.setPrototypeOf(obs.bindTo, obs);
+	Object.setPrototypeOf(obs.bindFrom, obs);
 	return obs;
 }

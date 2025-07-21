@@ -23,7 +23,7 @@
  */
 
 Function.prototype.computed = function(...observables) {
-    const subscriptions = new Set(), obs = base_observable(this, subscriptions);
+    const obs = base_observable(this);
     observables.forEach(observable => observable.subscribe(obs.notify));
     return obs;
 };

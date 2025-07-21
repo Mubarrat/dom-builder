@@ -22,8 +22,15 @@
  * SOFTWARE.
  */
 
-function validatable(validator = () => true, initialValue = null) {
-	const obs = observable(initialValue);
-	obs.isValid = (() => validator(obs())).computed(obs);
-	return obs;
+const attributeObservers = new WeakMap();
+
+new MutationObserver(mutations => mutations.forEach(mutation => attributeObservers.get(mutation.target)?.get(mutation.attributeName)?.forEach(callback => callback()))).observe(document, { attributes: true, subtree: true });
+
+function observeElementAttr(element, attribute, callback) {
+    let handlers = attributeObservers.get(element);
+    if (!handlers) attributeObservers.set(element, handlers = new Map());
+    let callbacks = handlers.get(attribute);
+    if (!callbacks) handlers.set(attribute, callbacks = new Set());
+    callbacks.add(callback);
 }
+

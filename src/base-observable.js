@@ -24,14 +24,12 @@
 
 Symbol.observable = Symbol('observable');
 
-function base_observable(baseFunction, subscriptions) {
+function base_observable(baseFunction) {
+	const subscriptions = new Set();
 	baseFunction.subscribe = fn => { subscriptions.add(fn); return () => subscriptions.delete(fn); };
     baseFunction.notify = () => subscriptions.forEach(fn => fn(baseFunction()));
-	baseFunction.bind = () => ({
-		[Symbol.observable]: "one-way",
-		target: baseFunction
-	});
-	baseFunction.bindSelect = selector => (() => selector(baseFunction())).computed(baseFunction).bind();
+	baseFunction[Symbol.observable] = "from";
+	baseFunction.bindSelect = selector => (() => selector(baseFunction())).computed(baseFunction);
 	baseFunction.bindMap = templateFn => baseFunction.bindSelect(collection => {
 		if (collection == null || typeof collection[Symbol.iterator] !== 'function')
 			throw new Error("bindMap requires an iterable (Array, Set, Generator, etc.)");
@@ -41,9 +39,21 @@ function base_observable(baseFunction, subscriptions) {
 			result.push(templateFn(item, index++));
 		return result;
 	});
+	baseFunction.validatable = (validator = () => true) =>
+		Object.setPrototypeOf(Object.assign((...args) => baseFunction(...args), {
+			isValid: (() => validator(baseFunction())).computed(baseFunction)
+		}), baseFunction);
+	baseFunction.coercible = (coerce = x => x) => Object.setPrototypeOf((...args) => {
+		if (args.length === 0) return baseFunction();
+		const coerced = coerce(...args);
+		if (Array.isArray(coerced)) return baseFunction(...coerced);
+		return baseFunction(coerced);
+	}, baseFunction);
+	baseFunction.extend = fn => {
+		const extended = (typeof fn === "function" ? fn.call(baseFunction, baseFunction) : fn) || baseFunction;
+		if (extended !== baseFunction && Object.getPrototypeOf(extended) !== baseFunction && extended !== Object.prototype)
+			Object.setPrototypeOf(extended, baseFunction);
+		return extended;
+	};
 	return baseFunction;
 }
-
-Array.prototype.bindSelect = function(selector) {
-	return (() => selector(...this.map(observable => observable()))).computed(...this).bind();
-};

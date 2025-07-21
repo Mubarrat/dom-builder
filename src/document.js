@@ -32,143 +32,26 @@ Object.defineProperties(Document.prototype, {
 					const tagName = prop.replace(/([A-Z])/g, "-$1").toLowerCase();
 					return (...args) => {
 						const element = this.createElementNS(namespace, tagName);
-						for (const arg of flattenDeep(args)) {
-							if (arg === null || arg === undefined || arg === false) {
+						for (const arg of flattenIterable(args)) {
+							if (arg === null || arg === undefined || arg === false)
 								continue;
-							}
 							if (arg.constructor === Object && arg[Symbol.observable] === undefined && arg[Symbol.iterator] === undefined) {
 								for (const [attr, value] of Object.entries(arg)) {
 									if (attr === 'style') {
-										// Case 1: Full style object is observable
-										if (value?.[Symbol.observable]) {
-											const mode = value[Symbol.observable];
-											const initial = value.target();
-											
-											// Case 1a: Observable returns string
-											if (typeof initial === 'string') {
-												const setStyleAttr = v => element.setAttribute('style', v);
-
-												switch (mode) {
-													case "one-way":
-														setStyleAttr(initial);
-														value.target.subscribe(setStyleAttr);
-														break;
-
-													case "to-source":
-														setStyleAttr(initial);
-														new MutationObserver(() => {
-															value.target(element.getAttribute('style') || '');
-														}).observe(element, {
-															attributes: true,
-															attributeFilter: ['style']
-														});
-														break;
-
-													case "two-way":
-														setStyleAttr(initial);
-														value.target.subscribe(setStyleAttr);
-														new MutationObserver(() => {
-															value.target(element.getAttribute('style') || '');
-														}).observe(element, {
-															attributes: true,
-															attributeFilter: ['style']
-														});
-														break;
-
-													default:
-														setStyleAttr(initial);
-														break;
-												}
-												return; // done
-											}
-
-											// Case 1b: Observable returns object
-											const getFullStyle = () => {
-												const result = {};
-												for (const prop of element.style) {
-													result[prop] = element.style[prop];
-												}
-												return result;
-											};
-
-											const applyFullStyle = v => Object.assign(element.style, v);
-
-											switch (mode) {
-												case "one-way":
-													applyFullStyle(initial);
-													value.target.subscribe(applyFullStyle);
-													break;
-
-												case "to-source":
-													applyFullStyle(initial);
-													new MutationObserver(() => {
-														value.target(getFullStyle());
-													}).observe(element, { attributes: true, attributeFilter: ["style"] });
-													break;
-
-												case "two-way":
-													applyFullStyle(initial);
-													value.target.subscribe(applyFullStyle);
-													new MutationObserver(() => {
-														value.target(getFullStyle());
-													}).observe(element, { attributes: true, attributeFilter: ["style"] });
-													break;
-
-												default:
-													applyFullStyle(initial);
-													break;
-											}
-										}
-
-										// Case 2: Style is plain string → assign directly to attribute
-										else if (typeof value === 'string') {
-											element.setAttribute('style', value);
-										}
-
-										// Case 3: Per-style-property observable map
-										else if (typeof value === 'object') {
-											for (const [styleProp, styleValue] of Object.entries(value)) {
-												switch (styleValue?.[Symbol.observable]) {
-													case "one-way": {
-														const setStyleValue = v => element.style[styleProp] = v;
-														setStyleValue(styleValue.target());
-														styleValue.target.subscribe(setStyleValue);
-														break;
-													}
-													case "to-source": {
-														const getStyleValue = () => element.style[styleProp];
-														styleValue.target(getStyleValue());
-														new MutationObserver(() => {
-															styleValue.target(getStyleValue());
-														}).observe(element, {
-															attributes: true,
-															attributeFilter: ['style']
-														});
-														break;
-													}
-													case "two-way": {
-														const getStyleValue = () => element.style[styleProp];
-														const setStyleValue = v => element.style[styleProp] = v;
-														setStyleValue(styleValue.target());
-														styleValue.target.subscribe(setStyleValue);
-														new MutationObserver(() => {
-															styleValue.target(getStyleValue());
-														}).observe(element, {
-															attributes: true,
-															attributeFilter: ['style']
-														});
-														break;
-													}
-													default:
-														element.style[styleProp] = styleValue;
-														break;
-												}
-											}
-										}
+										bindObservable(value,
+											v => typeof v === 'string'
+												? element.setAttribute('style', v)
+												: Object.entries(v).forEach(([prop, value]) =>
+													bindObservable(value,
+														v => element.style[prop] = v,
+														() => observeElementAttr(element, 'style', () => value(element.style[prop])))),
+											v => observeElementAttr(element, 'style', () => value(typeof v === 'string'
+												? element.getAttribute('style') || ''
+												: Object.assign({}, element.style))));
 									} else if (attr === 'on' && typeof value === 'object') {
 										// Attach multiple event listeners from an object
 										for (const [eventName, handler] of Object.entries(value)) {
-											for (const event of flattenDeep([handler])) {
+											for (const event of flattenIterable([handler])) {
 												if (typeof event === 'function') {
 													element.addEventListener(eventName.toLowerCase(), event);
 												}
@@ -176,201 +59,111 @@ Object.defineProperties(Document.prototype, {
 										}
 									} else if (attr.startsWith('on')) {
 										// Attach single event listener (e.g., onclick)
-										for (const event of flattenDeep([value])) {
+										for (const event of flattenIterable([value])) {
 											if (typeof event === 'function') {
 												element.addEventListener(attr.slice(2).toLowerCase(), event);
 											}
 										}
 									} else if (attr === 'data' && typeof value === 'object') {
 										// Handle data-* attributes, including observable bindings
-										for (const name in value) {
-											const data = value[name];
-											const setDatasetValue = v => element.dataset[name] = typeof v === 'object' ? JSON.stringify(v) : v;
-											switch (data?.[Symbol.observable]) {
-												case "one-way":
-													setDatasetValue(data.target());
-													data.target.subscribe(setDatasetValue);
-													break;
-												case "to-source":
-													setDatasetValue(data.target());
-													// Listen for changes to data-* attribute and update observable
-													new MutationObserver(() => {
-														const newValue = element.dataset[name];
-														try {
-															data.target(JSON.parse(newValue));
-														} catch {
-															data.target(newValue);
-														}
-													}).observe(element, {
-														attributes: true,
-														attributeFilter: [`data-${name}`]
-													});
-													break;
-												case "two-way":
-													setDatasetValue(data.target());
-													data.target.subscribe(setDatasetValue);
-													new MutationObserver(() => {
-														const newValue = element.dataset[name];
-														try {
-															data.target(JSON.parse(newValue));
-														} catch {
-															data.target(newValue);
-														}
-													}).observe(element, {
-														attributes: true,
-														attributeFilter: [`data-${name}`]
-													});
-													break;
-												default:
-													setDatasetValue(data);
-													break;
-											}
-										}
+										for (const [name, data] of Object.entries(value))
+											bindObservable(data,
+												v => element.dataset[name] = typeof v === 'object' ? JSON.stringify(v) : v,
+												v => observeElementAttr(element, `data-${name}`, () => {
+													const newValue = element.dataset[name];
+													try {
+														data(JSON.parse(newValue));
+													} catch {
+														data(newValue);
+													}
+												})
+											);
 									} else if (attr.toLowerCase().startsWith('ref')) {
 										// Call ref functions with the element as argument
-										for (const event of flattenDeep([value])) {
+										for (const event of flattenIterable([value])) {
 											if (typeof event === 'function') {
 												event.bind(element, element);
 											}
 										}
 									} else if (attr === 'value' && (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) {
-										// Special handling for value binding on form elements
-										switch (value?.[Symbol.observable]) {
-											case "one-way":
-												element.value = value.target();
-												value.target.subscribe(val => element.value = val);
-												break;
-											case "to-source":
-												element.value = value.target();
-												element.addEventListener(element instanceof HTMLSelectElement ? "change" : "input", () => value.target(element.value));
-												break;
-											case "two-way":
-												element.value = value.target();
-												value.target.subscribe(val => element.value = val);
-												element.addEventListener(element instanceof HTMLSelectElement ? "change" : "input", () => value.target(element.value));
-												break;
-											default:
-												element.value = value;
-												break;
-										}
+										bindObservable(value,
+											v => element.value = v,
+											() => element.addEventListener(element instanceof HTMLSelectElement ? 'change' : 'input', () => value(element.value))
+										);
 									} else if (attr === 'checked' && (element instanceof HTMLInputElement && (element.type === 'checkbox' || element.type === 'radio'))) {
-										// Special handling for checked binding on checkbox/radio
-										switch (value?.[Symbol.observable]) {
-											case "one-way":
-												element.checked = value.target();
-												value.target.subscribe(val => element.checked = val);
-												break;
-											case "to-source":
-												element.checked = value.target();
-												element.addEventListener("change", () => value.target(element.checked));
-												break;
-											case "two-way":
-												element.checked = value.target();
-												value.target.subscribe(val => element.checked = val);
-												element.addEventListener("change", () => value.target(element.checked));
-												break;
-											default:
-												element.checked = value;
-												break;
-										}
+										bindObservable(value,
+											v => element.checked = v,
+											() => element.addEventListener("change", () => value(element.checked))
+										);
 									} else if (value !== undefined) {
-										// Fallback: set as property if possible, else as attribute
-										const setPropOrAttr = v => {
-											if (attr in element) {
-												element[attr] = v;
-											} else {
-												element.setAttribute(attr, typeof v === 'object' ? JSON.stringify(v) : v);
+										bindObservable(value,
+											v => attr in element
+													? element[attr] = v
+													: element.setAttribute(attr, typeof v === 'object' ? JSON.stringify(v) : v),
+											() => {
+												let newVal = attr in element ? element[attr] : element.getAttribute(attr);
+												try {
+													value(JSON.parse(newVal));
+												} catch {
+													value(newVal);
+												}
 											}
-										};
-										switch (value?.[Symbol.observable]) {
-											case "one-way":
-												setPropOrAttr(value.target());
-												value.target.subscribe(setPropOrAttr);
-												break;
-											case "to-source":
-												setPropOrAttr(value.target());
-												// Listen for attribute/property changes and update observable
-												new MutationObserver(() => {
-													let newVal = attr in element ? element[attr] : element.getAttribute(attr);
-													try {
-														value.target(JSON.parse(newVal));
-													} catch {
-														value.target(newVal);
-													}
-												}).observe(element, {
-													attributes: true,
-													attributeFilter: [attr],
-													attributeOldValue: true
-												});
-												break;
-											case "two-way":
-												setPropOrAttr(value.target());
-												value.target.subscribe(setPropOrAttr);
-												new MutationObserver(() => {
-													let newVal = attr in element ? element[attr] : element.getAttribute(attr);
-													try {
-														value.target(JSON.parse(newVal));
-													} catch {
-														value.target(newVal);
-													}
-												}).observe(element, {
-													attributes: true,
-													attributeFilter: [attr],
-													attributeOldValue: true
-												});
-												break;
-											default:
-												setPropOrAttr(value);
-												break;
-										}
+										);
 									}
 								}
-							} else if (arg?.[Symbol.observable] === "one-way" && typeof arg.target === "function") {
+							} else if (arg?.[Symbol.observable] === "to" && typeof arg === "function") {
 								// Observable content: replace children when observable changes
-								const anchor = this.createTextNode("");
+								const anchor = new Text();
 								element.append(anchor);
 								let currentNodes = [];
-								const update = () => {
+								function update() {
 									for (const node of currentNodes) node.remove();
-									currentNodes = [];
-									let projected = arg.target();
+									let projected = arg();
 									while (typeof projected === "function") projected = projected();
-									const fragment = this.createDocumentFragment();
-									for (const node of flattenDeepWithFunction([projected])) {
-										if (node == null || node === false) continue;
-										const domNode = node instanceof Node ? node : this.createTextNode(String(node));
-										currentNodes.push(domNode);
-										fragment.appendChild(domNode);
-									}
+									const fragment = new DocumentFragment();
+									fragment.append(...flattenRenderable(projected).filter(node => node !== null && node !== undefined && node !== false));
+									currentNodes = Array.from(fragment.children);
 									anchor.after(fragment);
 								};
 								update();
-								arg.target.subscribe(update);
+								arg.subscribe(update);
 							} else {
 								// Append static or computed children (including arrays, functions, nodes, or primitives)
-								for (const node of flattenDeepWithFunction([arg])) {
-									if (node == null || node === false) continue;
-									element.append(node instanceof Node ? node : this.createTextNode(String(node)));
-								}
+								element.append(...flattenRenderable(arg).filter(node => node !== null && node !== undefined && node !== false));
 							}
 						}
 						return element;
 
-						function flattenDeep(iterable) {
-							return Array.from(iterable).flatMap(function recursive(x) {
-								return (x != null && typeof x !== 'string' && !(x instanceof EventTarget) && typeof x[Symbol.iterator] === 'function')
-									? Array.from(x).flatMap(recursive)
-									: [x];
-							});
+						function shouldBeIterated(x) {
+							return (
+								x != null &&
+								typeof x !== 'string' &&
+								typeof x !== 'function' &&
+								typeof x[Symbol.iterator] === 'function' &&
+								!(x instanceof Node) &&
+								!(x instanceof Date) &&
+								!(x instanceof RegExp)
+							);
 						}
 
-						function flattenDeepWithFunction(iterable) {
-							return Array.from(iterable).flatMap(function recursive(x) {
-								while (typeof x === 'function') x = x();
-								return (x != null && typeof x !== 'string' && !(x instanceof EventTarget) && typeof x[Symbol.iterator] === 'function')
-									? Array.from(x).flatMap(recursive)
-									: [x];
-							});
+						function flattenIterable(iterable) {
+							return shouldBeIterated(iterable) ? Array.from(iterable).flatMap(flattenIterable) : [iterable];
+						}
+
+						function flattenRenderable(renderable) {
+							while (typeof renderable === 'function') renderable = renderable();
+							return shouldBeIterated(renderable) ? Array.from(renderable).flatMap(flattenRenderable) : [renderable];
+						}
+
+						function bindObservable(value, set, observe) {
+							const mode = value?.[Symbol.observable];
+							if (!mode) { set(value); return; }
+							const evaluated = value();
+							set(evaluated);
+							if (mode === 'to' || mode === 'two-way')
+								value.subscribe(set);
+							if (mode === 'from' || mode === 'two-way')
+								observe?.(evaluated);
 						}
 					};
 				}
