@@ -1,0 +1,14 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "NodeNext",
+		"forceConsistentCasingInFileNames": true,
+		"strict": true,
+		"moduleResolution": "nodenext",
+		"allowSyntheticDefaultImports": true
+	},
+	"include": [
+		"../dist/dom.d.ts",
+		"**/*.ts"
+	]
+}

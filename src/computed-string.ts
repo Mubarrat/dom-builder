@@ -1,4 +1,4 @@
-/**
+/*
  * MIT License
  *
  * Copyright (c) 2025 Mubarrat
@@ -21,9 +21,25 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
+/// <reference path="computed.ts" />
 
-Function.prototype.computed = function(...observables) {
-    const obs = base_observable(this);
-    observables.forEach(observable => observable.subscribe(obs.notify));
-    return obs;
-};
+function cstr(strings: TemplateStringsArray, ...values) {
+    // Separate observables for tracking
+    const observables = values.filter(v => v instanceof baseObservable);
+
+    // If no observables → return static string
+    if (observables.length === 0) {
+        return strings.reduce((acc, str, i) => acc + str + (String(values[i]) ?? ""), "");
+    }
+
+    // Create computation function and attach .computed with observables
+    return (() => {
+        let result = strings[0];
+        for (let i = 0; i < values.length; i++) {
+            const val = values[i];
+            result += val instanceof baseObservable ? val() : val;
+            result += strings[i + 1];
+        }
+        return result;
+    }).computed(...observables);
+}
