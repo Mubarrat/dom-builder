@@ -4,7 +4,9 @@
   "description": "A lightweight DOM builder library that creates HTML, SVG, and MathML elements using function calls. Supports attributes, event listeners, reactive updates, and nested child elements for declarative UI construction.",
   "scripts": {
     "build": "tsc -p tsconfig.dts.json && tsc && node build.mjs",
-    "test": "npx playwright test"
+    "test": "npx playwright test",
+    "test:ui": "npx playwright test --ui",
+    "test:result": "npx playwright show-report"
   },
   "repository": {
     "type": "git",

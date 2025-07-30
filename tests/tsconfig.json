@@ -5,7 +5,8 @@
 		"forceConsistentCasingInFileNames": true,
 		"strict": true,
 		"moduleResolution": "nodenext",
-		"allowSyntheticDefaultImports": true
+		"allowSyntheticDefaultImports": true,
+		"noImplicitAny": false
 	},
 	"include": [
 		"../dist/dom.d.ts",
