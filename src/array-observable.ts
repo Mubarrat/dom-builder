@@ -398,7 +398,7 @@ arrayObservable.prototype.pessimistic = function<T, R>(
 };
 
 Object.defineProperty(arrayObservable.prototype, Symbol.toStringTag, {
-	get: () => 'arrayObservable',
+	value: 'arrayObservable',
 	writable: false,
 	enumerable: false,
 	configurable: false

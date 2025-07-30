@@ -194,7 +194,7 @@ baseObservable.prototype.coercible = function (coerce: (...args) => any = (x) =>
 };
 
 Object.defineProperty(baseObservable.prototype, Symbol.toStringTag, {
-	get: () => 'baseObservable',
+	value: 'baseObservable',
 	writable: false,
 	enumerable: false,
 	configurable: false

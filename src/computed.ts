@@ -71,7 +71,7 @@ Function.prototype.computed.prototype = Object.create(baseObservable.prototype) 
 Function.prototype.computed.prototype.constructor = Function.prototype.computed;
 Object.setPrototypeOf(Function.prototype.computed, baseObservable);
 Object.defineProperty(Function.prototype.computed.prototype, Symbol.toStringTag, {
-	get: () => 'computed',
+	value: 'computed',
 	writable: false,
 	enumerable: false,
 	configurable: false

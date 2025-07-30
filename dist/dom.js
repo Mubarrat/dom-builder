@@ -59,7 +59,7 @@ baseObservable.prototype.coercible = function (coerce = (x) => x) {
     }, this);
 };
 Object.defineProperty(baseObservable.prototype, Symbol.toStringTag, {
-    get: () => 'baseObservable',
+    value: 'baseObservable',
     writable: false,
     enumerable: false,
     configurable: false
@@ -285,7 +285,7 @@ arrayObservable.prototype.pessimistic = function (promise, updater, onError) {
     });
 };
 Object.defineProperty(arrayObservable.prototype, Symbol.toStringTag, {
-    get: () => 'arrayObservable',
+    value: 'arrayObservable',
     writable: false,
     enumerable: false,
     configurable: false
@@ -304,7 +304,7 @@ Function.prototype.computed.prototype = Object.create(baseObservable.prototype);
 Function.prototype.computed.prototype.constructor = Function.prototype.computed;
 Object.setPrototypeOf(Function.prototype.computed, baseObservable);
 Object.defineProperty(Function.prototype.computed.prototype, Symbol.toStringTag, {
-    get: () => 'computed',
+    value: 'computed',
     writable: false,
     enumerable: false,
     configurable: false
@@ -621,7 +621,7 @@ observable.prototype.pessimistic = function (promise, updater, onError) {
     });
 };
 Object.defineProperty(observable.prototype, Symbol.toStringTag, {
-    get: () => 'observable',
+    value: 'observable',
     writable: false,
     enumerable: false,
     configurable: false

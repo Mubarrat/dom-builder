@@ -215,7 +215,7 @@ observable.prototype.pessimistic = function<T, R>(
 };
 
 Object.defineProperty(observable.prototype, Symbol.toStringTag, {
-	get: () => 'observable',
+	value: 'observable',
 	writable: false,
 	enumerable: false,
 	configurable: false

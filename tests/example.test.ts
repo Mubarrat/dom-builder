@@ -6,8 +6,6 @@ const filePath = path.resolve("tests/test.html");
 test("div renders", async ({ page }) => {
 	await page.goto(`file://${filePath}`);
 
-	
-
 	const outerHTML = await page.evaluate(() => {
 		const hello = observable("Hello");
 		

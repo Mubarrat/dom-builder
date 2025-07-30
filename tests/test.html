@@ -2,33 +2,8 @@
 <html lang="en">
 <head>
 	<meta charset="utf-8">
-	<script src="../dist/dom.js"></script>
-	<script>
-		window.assert = {
-			equal(actual, expected) {
-				if (actual !== expected) {
-					throw new Error(`Assertion failed: ${actual} !== ${expected}`);
-				}
-			}
-		};
-	</script>
+	<script src="../dist/dom.min.js"></script>
 </head>
 <body>
-	<script type="module">
-		const params = new URLSearchParams(location.search);
-		const testModule = params.get('test');
-		if (!testModule) throw new Error('No test specified');
-		for (const [name, fn] of Object.entries(await import(testModule))) {
-			try {
-				fn();
-				console.log(`✅ ${name} passed`);
-			} catch (err) {
-				console.error(`❌ ${name} failed`, err);
-			}
-		}
-	</script>
-	<script>
-		const some = observable('hello')
-	</script>
 </body>
 </html>

@@ -11,17 +11,13 @@
 
 ## Overview
 
-**Dom-Builder** is a modern JavaScript library for declaratively constructing and updating DOM elements with simplicity and precision. It improves upon the previous [`html-builder`](https://github.com/Mubarrat/html-builder) by offering a cleaner, MVVM-friendly architecture and clearer naming.
+**Dom-Builder** is a modern JavaScript library for declaratively constructing and updating DOM elements with simplicity and precision. It improves upon the previous [`html-builder`](https://github.com/Mubarrat/dom-builder/tree/6ec7e8fed86d7769914392fde55479cc2d62fdc9) by offering a cleaner, MVVM-friendly architecture and clearer naming.
 
 ---
 
-## What's New in v3+
+## What's New in Dom-Builder
 
-* Renamed to **Dom-Builder** to better reflect its focus on the DOM.
-* Declarative usage is now the default — no more `build()` method.
-* Introduced built-in MVVM-style utilities like `observable`, `computed`, and powerful binding mechanisms such as `bind`, `bindSelect`, and `bindMap`.
-* Removed long-form `new HtmlItem(...)` syntax — replaced with concise `$html.div(...)` style.
-* Smaller, faster, and framework-agnostic.
+You can check out the [Wiki](https://github.com/Mubarrat/dom-builder/wiki) for this.
 
 ---
 
@@ -37,20 +33,24 @@ After extracting the zip, you'll find:
 
 ```
 dom-builder
+├── dom.d.ts
+├── dom.d.ts.map
 ├── dom.js
-└── dom.min.js
+├── dom.js.map
+├── dom.min.js
+└── dom.min.js.map
 ```
 
 ### CDN
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/Mubarrat/dom-builder@3.x/dist/dom.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/Mubarrat/dom-builder@4.x/dist/dom.js"></script>
 ```
 
 Minified:
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/Mubarrat/dom-builder@3.x/dist/dom.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/Mubarrat/dom-builder@4.x/dist/dom.min.js"></script>
 ```
 
 ### GitHub Package
