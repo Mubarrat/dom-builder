@@ -152,6 +152,8 @@ type ArrayChange<T> = {
     reversed: true;
 } | {
     sortFn: ((a: T, b: T) => number) | null;
+} | {
+    sortedIndices: number[];
 };
 /**
  * Reactive array type combining {@link baseObservable} semantics with native Array methods.
@@ -206,31 +208,16 @@ interface arrayObservable<T = any> extends baseObservable<T[]>, Array<T> {
     /**
      * Applies an **optimistic update** strategy to the array:
      *
-     * - Immediately mutates array using `updater`.
-     * - If the `promise` resolves, applies `resolver` (if provided).
-     * - If the `promise` rejects, reverts to previous state and optionally calls `onError`.
+     * - Immediately mutates the array using `updater`.
+     * - If the `promise` resolves, keeps the optimistic changes.
+     * - If the `promise` rejects, reverts the array to its previous state.
      *
      * @typeParam R The resolved type of the `promise`.
-     * @param updater Function to optimistically modify current array.
+     * @param updater Function to optimistically modify the current array.
      * @param promise Async operation representing the intended update.
-     * @param resolver Optional reconciliation function upon promise resolution.
-     * @param onError Optional rollback handler invoked on error.
-     * @returns The same `promise` for chaining but with handling.
+     * @returns The same `promise` for chaining, with rollback on rejection.
      */
-    optimistic<R>(updater: (current: arrayObservable<T>) => T[] | void, promise: Promise<R>, resolver?: (current: arrayObservable<T>, result: R) => T[] | void, onError?: (err: any, rollbackValue: arrayObservable<T>) => void): Promise<R | void>;
-    /**
-     * Applies a **pessimistic update** strategy to the array:
-     *
-     * - Waits for the `promise` to resolve before mutating array via `updater`.
-     * - If the `promise` rejects, optionally calls `onError`.
-     *
-     * @typeParam R The resolved type of the `promise`.
-     * @param promise Async operation representing the intended update.
-     * @param updater Function to apply value updates after resolution.
-     * @param onError Optional error handler (no rollback).
-     * @returns The same `promise` for chaining but with handling.
-     */
-    pessimistic<R>(promise: Promise<R>, updater: (current: arrayObservable<T>, result: R) => T[] | void, onError?: (err: any, current: arrayObservable<T>) => void): Promise<R | void>;
+    optimistic<R>(updater: (current: arrayObservable<T>) => void, promise: Promise<R>): Promise<R>;
 }
 declare namespace arrayObservable {
     /**
@@ -411,33 +398,30 @@ interface observable<T = any> extends baseObservable<T> {
      */
     bindFrom: observable<T>;
     /**
-     * Applies an **optimistic update** strategy:
+     * Callable form of the observable:
+     * - **Getter**: No arguments → returns current value.
+     * - **Setter**: With arguments → update and return new value.
      *
-     * - Immediately updates state using `updater`.
-     * - If the `promise` resolves, applies `resolver` (if provided) for reconciliation.
-     * - If the `promise` rejects, reverts to the previous value and optionally calls `onError`.
-     *
-     * @typeParam R The resolved type of the `promise`.
-     * @param updater Function to optimistically modify current value.
-     * @param promise Async operation representing the intended update.
-     * @param resolver Optional reconciliation function upon promise resolution.
-     * @param onError Optional rollback handler invoked on error.
-     * @returns The same `promise` for chaining but with handling.
+     * @param newValue New value.
+     * @returns Current/New value if new value was provided and change was allowed.
      */
-    optimistic<R>(updater: (current: T) => T | void, promise: Promise<R>, resolver?: (current: T, result: R) => T | void, onError?: (err: any, rollbackValue: T) => void): Promise<R | void>;
+    (newValue?: T): T;
     /**
-     * Applies a **pessimistic update** strategy:
+     * Applies an **optimistic update** strategy (immutable-only):
      *
-     * - Waits for the `promise` to resolve before updating state via `updater`.
-     * - If the `promise` rejects, optionally calls `onError` without rollback.
+     * - Immediately computes a **new immutable value** using `updater` and applies it.
+     * - If the `promise` rejects, rolls back to the **previous value**.
+     *
+     * **Important:**
+     * - `updater` **must return a new immutable value**; in-place mutations are not supported.
+     * - State changes are applied via `tryChange` to ensure consistent change notifications.
      *
      * @typeParam R The resolved type of the `promise`.
+     * @param updater Pure function returning the next value for optimistic update.
      * @param promise Async operation representing the intended update.
-     * @param updater Function to apply value updates after resolution.
-     * @param onError Optional error handler (no rollback).
-     * @returns The same `promise` for chaining but with handling.
+     * @returns The same `promise` for chaining (with rollback on rejection).
      */
-    pessimistic<R>(promise: Promise<R>, updater: (current: T, result: R) => T | void, onError?: (err: any, current: T) => void): Promise<R | void>;
+    optimistic<R>(updater: (current: T) => T, promise: Promise<R>): Promise<R>;
 }
 declare namespace observable {
     /**
@@ -446,5 +430,5 @@ declare namespace observable {
      */
     var prototype: observable;
 }
-declare function observable<T>(initialValue?: T | null): observable<T>;
+declare function observable<T>(initialValue?: T | undefined): observable<T>;
 //# sourceMappingURL=dom.d.ts.map

@@ -40,7 +40,8 @@ type ArrayChange<T> =
 		oldItems?: T[];
 	}
 	| { reversed: true }
-	| { sortFn: ((a: T, b: T) => number) | null };
+	| { sortFn: ((a: T, b: T) => number) | null }
+	| { sortedIndices: number[] };
 
 /**
  * Reactive array type combining {@link baseObservable} semantics with native Array methods.
@@ -99,41 +100,16 @@ interface arrayObservable<T = any> extends baseObservable<T[]>, Array<T> {
 	/**
 	 * Applies an **optimistic update** strategy to the array:
 	 *
-	 * - Immediately mutates array using `updater`.
-	 * - If the `promise` resolves, applies `resolver` (if provided).
-	 * - If the `promise` rejects, reverts to previous state and optionally calls `onError`.
+	 * - Immediately mutates the array using `updater`.
+	 * - If the `promise` resolves, keeps the optimistic changes.
+	 * - If the `promise` rejects, reverts the array to its previous state.
 	 *
 	 * @typeParam R The resolved type of the `promise`.
-	 * @param updater Function to optimistically modify current array.
+	 * @param updater Function to optimistically modify the current array.
 	 * @param promise Async operation representing the intended update.
-	 * @param resolver Optional reconciliation function upon promise resolution.
-	 * @param onError Optional rollback handler invoked on error.
-	 * @returns The same `promise` for chaining but with handling.
+	 * @returns The same `promise` for chaining, with rollback on rejection.
 	 */
-	optimistic<R>(
-		updater: (current: arrayObservable<T>) => T[] | void,
-		promise: Promise<R>,
-		resolver?: (current: arrayObservable<T>, result: R) => T[] | void,
-		onError?: (err: any, rollbackValue: arrayObservable<T>) => void
-	): Promise<R | void>;
-
-	/**
-	 * Applies a **pessimistic update** strategy to the array:
-	 *
-	 * - Waits for the `promise` to resolve before mutating array via `updater`.
-	 * - If the `promise` rejects, optionally calls `onError`.
-	 *
-	 * @typeParam R The resolved type of the `promise`.
-	 * @param promise Async operation representing the intended update.
-	 * @param updater Function to apply value updates after resolution.
-	 * @param onError Optional error handler (no rollback).
-	 * @returns The same `promise` for chaining but with handling.
-	 */
-	pessimistic<R>(
-		promise: Promise<R>,
-		updater: (current: arrayObservable<T>, result: R) => T[] | void,
-		onError?: (err: any, current: arrayObservable<T>) => void
-	): Promise<R | void>;
+	optimistic<R>(updater: (current: arrayObservable<T>) => void, promise: Promise<R>): Promise<R>;
 }
 
 declare namespace arrayObservable {
@@ -193,7 +169,19 @@ function arrayObservable<T>(initialValues: Iterable<T>): arrayObservable<T> {
 
 				case "sort":
 					return (compareFn?: (a: T, b: T) => number) => {
-						target.tryChange(() => array.sort(compareFn), { sortFn: compareFn || null });
+						// Pre-notify with the intent
+						if (!target.notifyBefore({ sortFn: compareFn || null })) return receiver;
+
+						// Perform sort
+						const oldArray = [...array];
+						array.sort(compareFn);
+
+						// Compute permutation mapping: old index → new index
+						const sortedIndices = oldArray.map(item => array.indexOf(item));
+
+						// Post-notify with the actual permutation
+						target.notify({ sortedIndices });
+
 						return receiver;
 					};
 
@@ -230,7 +218,7 @@ function arrayObservable<T>(initialValues: Iterable<T>): arrayObservable<T> {
 			// Handle numeric index assignment
 			if (typeof prop === "string") {
 				const n = Number(prop);
-				if (Number.isInteger(n) && n >= 0 && String(n) === prop && array[n] !== value)
+				if (Number.isInteger(n) && n >= 0 && String(n) === prop && !Object.is(array[n], value))
 					return target.tryChange(() => {
 						array[n] = value;
 						return true;
@@ -342,58 +330,16 @@ arrayObservable.prototype.bindMap = function<T, U>(
 	}) as arrayObservable<U>;
 };
 
-arrayObservable.prototype.optimistic = function<T, R>(
-	updater: (current: arrayObservable<T>) => T[] | void,
-	promise: Promise<R>,
-	resolver?: (current: arrayObservable<T>, result: R) => T[] | void,
-	onError?: (err: any, rollbackValue: arrayObservable<T>) => void
-): Promise<R | void> {
+arrayObservable.prototype.optimistic = function<T, R>(updater: (current: arrayObservable<T>) => void, promise: Promise<R>): Promise<R> {
 	const snapshot = [...this]; // raw for rollback
 
 	// Apply optimistic update (mutable or immutable)
-	const returnedArray = updater(this);
-	if (Array.isArray(returnedArray)) {
-		this.splice(0, this.length, ...returnedArray);
-	}
+	updater(this);
 
-	return promise.then(result => {
-		if (typeof resolver === "function") {
-			const reconciled = resolver(this, result);
-			if (Array.isArray(reconciled)) {
-				this.splice(0, this.length, ...reconciled);
-			}
-		}
-		return result;
-	}).catch(err => {
+	return promise.catch(err => {
 		// Rollback state
 		this.splice(0, this.length, ...snapshot);
-
-		if (typeof onError === "function") {
-			// Wrap snapshot as observable for rollback handler
-			onError(err, arrayObservable(snapshot));
-		} else {
-			throw err;
-		}
-	});
-};
-
-arrayObservable.prototype.pessimistic = function<T, R>(
-	promise: Promise<R>,
-	updater: (current: arrayObservable<T>, result: R) => T[] | void,
-	onError?: (err: any, current: arrayObservable<T>) => void
-): Promise<R | void> {
-	return promise.then(result => {
-		const returnedArray = updater(this, result);
-		if (Array.isArray(returnedArray)) {
-			this.splice(0, this.length, ...returnedArray);
-		}
-		return result;
-	}).catch(err => {
-		if (typeof onError === "function") {
-			onError(err, this); // Current observable is already available
-		} else {
-			throw err;
-		}
+		throw err;
 	});
 };
 

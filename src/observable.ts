@@ -58,43 +58,31 @@ interface observable<T = any> extends baseObservable<T> {
 	bindFrom: observable<T>;
 
 	/**
-	 * Applies an **optimistic update** strategy:
+	 * Callable form of the observable:
+	 * - **Getter**: No arguments → returns current value.
+	 * - **Setter**: With arguments → update and return new value.
 	 *
-	 * - Immediately updates state using `updater`.
-	 * - If the `promise` resolves, applies `resolver` (if provided) for reconciliation.
-	 * - If the `promise` rejects, reverts to the previous value and optionally calls `onError`.
-	 *
-	 * @typeParam R The resolved type of the `promise`.
-	 * @param updater Function to optimistically modify current value.
-	 * @param promise Async operation representing the intended update.
-	 * @param resolver Optional reconciliation function upon promise resolution.
-	 * @param onError Optional rollback handler invoked on error.
-	 * @returns The same `promise` for chaining but with handling.
+	 * @param newValue New value.
+	 * @returns Current/New value if new value was provided and change was allowed.
 	 */
-	optimistic<R>(
-		updater: (current: T) => T | void,
-		promise: Promise<R>,
-		resolver?: (current: T, result: R) => T | void,
-		onError?: (err: any, rollbackValue: T) => void
-	): Promise<R | void>;
+	(newValue?: T): T;
 
 	/**
-	 * Applies a **pessimistic update** strategy:
+	 * Applies an **optimistic update** strategy (immutable-only):
 	 *
-	 * - Waits for the `promise` to resolve before updating state via `updater`.
-	 * - If the `promise` rejects, optionally calls `onError` without rollback.
+	 * - Immediately computes a **new immutable value** using `updater` and applies it.
+	 * - If the `promise` rejects, rolls back to the **previous value**.
+	 *
+	 * **Important:**
+	 * - `updater` **must return a new immutable value**; in-place mutations are not supported.
+	 * - State changes are applied via `tryChange` to ensure consistent change notifications.
 	 *
 	 * @typeParam R The resolved type of the `promise`.
+	 * @param updater Pure function returning the next value for optimistic update.
 	 * @param promise Async operation representing the intended update.
-	 * @param updater Function to apply value updates after resolution.
-	 * @param onError Optional error handler (no rollback).
-	 * @returns The same `promise` for chaining but with handling.
+	 * @returns The same `promise` for chaining (with rollback on rejection).
 	 */
-	pessimistic<R>(
-		promise: Promise<R>,
-		updater: (current: T, result: R) => T | void,
-		onError?: (err: any, current: T) => void
-	): Promise<R | void>;
+	optimistic<R>(updater: (current: T) => T, promise: Promise<R>): Promise<R>;
 }
 
 declare namespace observable {
@@ -105,13 +93,13 @@ declare namespace observable {
 	var prototype: observable;
 }
 
-function observable<T>(initialValue: T | null = null): observable<T> {
+function observable<T>(initialValue: T | undefined = undefined): observable<T> {
 	let value = initialValue;
 
 	// Wrap the internal value in a baseObservable for reactivity
 	const obs = baseObservable(function (newValue) {
 		// Update only when a new value is provided and it's different
-		if (arguments.length !== 0 && value !== newValue) {
+		if (arguments.length !== 0 && !Object.is(value, newValue)) {
 			obs.tryChange(() => value = newValue, { oldValue: value, newValue });
 		}
 		return value;
@@ -130,87 +118,17 @@ Object.setPrototypeOf(observable.prototype, baseObservable.prototype);
 Object.setPrototypeOf(observable, baseObservable);
 observable.prototype.type = "two-way";
 
-observable.prototype.optimistic = function<T, R>(
-	updater: (current: T) => T | void,
-	promise: Promise<R>,
-	resolver?: (current: T, result: R) => T | void,
-	onError?: (err: any, rollbackValue: T) => void
-): Promise<R | void> {
-	// Snapshot current value for rollback in case of failure
-	const value = this();
-	const snapshot = Array.isArray(value)
-		? [...value] // shallow copy for arrays
-		: value && typeof value === "object"
-			? Object.create(Object.getPrototypeOf(value), Object.getOwnPropertyDescriptors(value)) // shallow copy for objects
-			: value;
+observable.prototype.optimistic = function<T, R>(updater: (current: T) => T, promise: Promise<R>): Promise<R> {
+	// Snapshot current value for rollback
+	const snapshot = this();
 
-	// Perform optimistic update (mutable or immutable)
-	const returnedObject = updater(this());
-	if (
-		typeof returnedObject === typeof value &&
-		returnedObject != null &&
-		value != null &&
-		returnedObject.constructor === value.constructor
-	) {
-		this(returnedObject); // immutable update: replace value
-	} else {
-		this.notify(); // mutable update: trigger subscribers without replacement
-	}
+	// Apply optimistic update (must return new value)
+	this(updater(snapshot));
 
-	return promise.then(result => {
-		// Reconcile state if resolver is provided
-		if (typeof resolver === "function") {
-			const next = resolver(this(), result);
-			if (
-				typeof next === typeof value &&
-				next != null &&
-				value != null &&
-				next.constructor === value.constructor
-			) {
-				this(next); // immutable reconciliation
-			} else {
-				this.notify(); // fallback notify for mutation
-			}
-		}
-		return result;
-	}).catch(err => {
+	return promise.catch(err => {
 		// Rollback on failure
 		this(snapshot);
-		if (typeof onError === "function") {
-			onError(err, snapshot);
-		} else {
-			throw err;
-		}
-	});
-};
-
-observable.prototype.pessimistic = function<T, R>(
-	promise: Promise<R>,
-	updater: (current: T, result: R) => T | void,
-	onError?: (err: any, current: T) => void
-): Promise<R | void> {
-	const value = this();
-
-	// Apply update only after promise resolves
-	return promise.then(result => {
-		const returnedObject = updater(this(), result);
-		if (
-			typeof returnedObject === typeof value &&
-			returnedObject != null &&
-			value != null &&
-			returnedObject.constructor === value.constructor
-		) {
-			this(returnedObject); // immutable update
-		} else {
-			this.notify(); // mutable update
-		}
-		return result;
-	}).catch(err => {
-		if (typeof onError === "function") {
-			onError(err, this());
-		} else {
-			throw err;
-		}
+		throw err;
 	});
 };
 

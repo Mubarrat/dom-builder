@@ -118,7 +118,12 @@ function arrayObservable(initialValues) {
                     };
                 case "sort":
                     return (compareFn) => {
-                        target.tryChange(() => array.sort(compareFn), { sortFn: compareFn || null });
+                        if (!target.notifyBefore({ sortFn: compareFn || null }))
+                            return receiver;
+                        const oldArray = [...array];
+                        array.sort(compareFn);
+                        const sortedIndices = oldArray.map(item => array.indexOf(item));
+                        target.notify({ sortedIndices });
                         return receiver;
                     };
                 case "fill":
@@ -154,7 +159,7 @@ function arrayObservable(initialValues) {
         set(target, prop, value, receiver) {
             if (typeof prop === "string") {
                 const n = Number(prop);
-                if (Number.isInteger(n) && n >= 0 && String(n) === prop && array[n] !== value)
+                if (Number.isInteger(n) && n >= 0 && String(n) === prop && !Object.is(array[n], value))
                     return target.tryChange(() => {
                         array[n] = value;
                         return true;
@@ -244,44 +249,12 @@ arrayObservable.prototype.bindMap = function (mapper) {
         }
     });
 };
-arrayObservable.prototype.optimistic = function (updater, promise, resolver, onError) {
+arrayObservable.prototype.optimistic = function (updater, promise) {
     const snapshot = [...this];
-    const returnedArray = updater(this);
-    if (Array.isArray(returnedArray)) {
-        this.splice(0, this.length, ...returnedArray);
-    }
-    return promise.then(result => {
-        if (typeof resolver === "function") {
-            const reconciled = resolver(this, result);
-            if (Array.isArray(reconciled)) {
-                this.splice(0, this.length, ...reconciled);
-            }
-        }
-        return result;
-    }).catch(err => {
+    updater(this);
+    return promise.catch(err => {
         this.splice(0, this.length, ...snapshot);
-        if (typeof onError === "function") {
-            onError(err, arrayObservable(snapshot));
-        }
-        else {
-            throw err;
-        }
-    });
-};
-arrayObservable.prototype.pessimistic = function (promise, updater, onError) {
-    return promise.then(result => {
-        const returnedArray = updater(this, result);
-        if (Array.isArray(returnedArray)) {
-            this.splice(0, this.length, ...returnedArray);
-        }
-        return result;
-    }).catch(err => {
-        if (typeof onError === "function") {
-            onError(err, this);
-        }
-        else {
-            throw err;
-        }
+        throw err;
     });
 };
 Object.defineProperty(arrayObservable.prototype, Symbol.toStringTag, {
@@ -312,13 +285,13 @@ Object.defineProperty(Function.prototype.computed.prototype, Symbol.toStringTag,
 function cstr(strings, ...values) {
     const observables = values.filter(v => v instanceof baseObservable);
     if (observables.length === 0) {
-        return strings.reduce((acc, str, i) => acc + str + (String(values[i]) ?? ""), "");
+        return strings.reduce((acc, str, i) => acc + str + (i < values.length ? String(values[i]) : ""), "");
     }
     return (() => {
         let result = strings[0];
         for (let i = 0; i < values.length; i++) {
             const val = values[i];
-            result += val instanceof baseObservable ? val() : val;
+            result += String(val instanceof baseObservable ? val() : val);
             result += strings[i + 1];
         }
         return result;
@@ -540,10 +513,10 @@ Object.defineProperties(Window.prototype, {
         enumerable: true
     }
 });
-function observable(initialValue = null) {
+function observable(initialValue = undefined) {
     let value = initialValue;
     const obs = baseObservable(function (newValue) {
-        if (arguments.length !== 0 && value !== newValue) {
+        if (arguments.length !== 0 && !Object.is(value, newValue)) {
             obs.tryChange(() => value = newValue, { oldValue: value, newValue });
         }
         return value;
@@ -556,68 +529,12 @@ function observable(initialValue = null) {
 Object.setPrototypeOf(observable.prototype, baseObservable.prototype);
 Object.setPrototypeOf(observable, baseObservable);
 observable.prototype.type = "two-way";
-observable.prototype.optimistic = function (updater, promise, resolver, onError) {
-    const value = this();
-    const snapshot = Array.isArray(value)
-        ? [...value]
-        : value && typeof value === "object"
-            ? Object.create(Object.getPrototypeOf(value), Object.getOwnPropertyDescriptors(value))
-            : value;
-    const returnedObject = updater(this());
-    if (typeof returnedObject === typeof value &&
-        returnedObject != null &&
-        value != null &&
-        returnedObject.constructor === value.constructor) {
-        this(returnedObject);
-    }
-    else {
-        this.notify();
-    }
-    return promise.then(result => {
-        if (typeof resolver === "function") {
-            const next = resolver(this(), result);
-            if (typeof next === typeof value &&
-                next != null &&
-                value != null &&
-                next.constructor === value.constructor) {
-                this(next);
-            }
-            else {
-                this.notify();
-            }
-        }
-        return result;
-    }).catch(err => {
+observable.prototype.optimistic = function (updater, promise) {
+    const snapshot = this();
+    this(updater(snapshot));
+    return promise.catch(err => {
         this(snapshot);
-        if (typeof onError === "function") {
-            onError(err, snapshot);
-        }
-        else {
-            throw err;
-        }
-    });
-};
-observable.prototype.pessimistic = function (promise, updater, onError) {
-    const value = this();
-    return promise.then(result => {
-        const returnedObject = updater(this(), result);
-        if (typeof returnedObject === typeof value &&
-            returnedObject != null &&
-            value != null &&
-            returnedObject.constructor === value.constructor) {
-            this(returnedObject);
-        }
-        else {
-            this.notify();
-        }
-        return result;
-    }).catch(err => {
-        if (typeof onError === "function") {
-            onError(err, this());
-        }
-        else {
-            throw err;
-        }
+        throw err;
     });
 };
 Object.defineProperty(observable.prototype, Symbol.toStringTag, {

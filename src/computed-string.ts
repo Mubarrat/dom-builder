@@ -29,7 +29,9 @@ function cstr(strings: TemplateStringsArray, ...values) {
 
     // If no observables → return static string
     if (observables.length === 0) {
-        return strings.reduce((acc, str, i) => acc + str + (String(values[i]) ?? ""), "");
+        return strings.reduce((acc, str, i) =>
+            acc + str + (i < values.length ? String(values[i]) : ""), ""
+        );
     }
 
     // Create computation function and attach .computed with observables
@@ -37,7 +39,7 @@ function cstr(strings: TemplateStringsArray, ...values) {
         let result = strings[0];
         for (let i = 0; i < values.length; i++) {
             const val = values[i];
-            result += val instanceof baseObservable ? val() : val;
+            result += String(val instanceof baseObservable ? val() : val);
             result += strings[i + 1];
         }
         return result;
