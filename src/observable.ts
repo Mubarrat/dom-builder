@@ -75,10 +75,11 @@ interface observable<T = any> extends baseObservable<T> {
 	 *
 	 * **Important:**
 	 * - `updater` **must return a new immutable value**; in-place mutations are not supported.
+	 * - `updater` **must be synchronous**; asynchronous logic will not be captured for rollback.
 	 * - State changes are applied via `tryChange` to ensure consistent change notifications.
 	 *
 	 * @typeParam R The resolved type of the `promise`.
-	 * @param updater Pure function returning the next value for optimistic update.
+	 * @param updater Pure synchronous function returning the next value for optimistic update.
 	 * @param promise Async operation representing the intended update.
 	 * @returns The same `promise` for chaining (with rollback on rejection).
 	 */

@@ -104,8 +104,12 @@ interface arrayObservable<T = any> extends baseObservable<T[]>, Array<T> {
 	 * - If the `promise` resolves, keeps the optimistic changes.
 	 * - If the `promise` rejects, reverts the array to its previous state.
 	 *
+	 * @remarks
+	 * The `updater` function **must be synchronous**; asynchronous mutations
+	 * will not be captured for rollback.
+	 *
 	 * @typeParam R The resolved type of the `promise`.
-	 * @param updater Function to optimistically modify the current array.
+	 * @param updater Function to synchronously and optimistically modify the array.
 	 * @param promise Async operation representing the intended update.
 	 * @returns The same `promise` for chaining, with rollback on rejection.
 	 */
@@ -165,7 +169,7 @@ const arrayObservable = function<T>(initialValues: Iterable<T>): arrayObservable
 
 				case "reverse":
 					return () => {
-						target.tryChange(array.reverse, { reversed: true })
+						target.tryChange(() => array.reverse(), { reversed: true })
 						return receiver;
 					};
 
@@ -271,7 +275,7 @@ const arrayObservable = function<T>(initialValues: Iterable<T>): arrayObservable
 			}
 			if (prop === "length") {
 				return {
-					configurable: false,
+					configurable: true,
 					enumerable: false,
 					value: array.length,
 					writable: true,
@@ -333,14 +337,38 @@ arrayObservable.prototype.bindMap = function<T, U>(
 };
 
 arrayObservable.prototype.optimistic = function<T, R>(updater: (current: arrayObservable<T>) => void, promise: Promise<R>): Promise<R> {
-	const snapshot = [...this]; // raw for rollback
+	// Collect all valuechanged events triggered by updater
+	const changes: ArrayChange<T>[] = [];
 
-	// Apply optimistic update (mutable or immutable)
-	updater(this);
+	const capture = (e: ValueChangeEvent<ArrayChange<T>>) =>
+		changes.push(e as Extract<ValueChangeEvent<ArrayChange<T>>, ArrayChange<T>>);
 
+	this.addEventListener("valuechanged", capture);
+	updater(this); // must be synchronous
+	this.removeEventListener("valuechanged", capture);
+
+	// On reject, replay inverse changes in reverse order
 	return promise.catch(err => {
-		// Rollback state
-		this.splice(0, this.length, ...snapshot);
+		for (let i = changes.length - 1; i >= 0; i--) {
+			const change = changes[i];
+			if ("index" in change) {
+				this.splice(change.index, change.newItems?.length ?? 0, ...(change.oldItems ?? []));
+			} else if ("reversed" in change) {
+				this.reverse(); // Reverse again to undo
+			} else if ("sortedIndices" in change) {
+				// Build inverse mapping: newIndex -> oldIndex
+				const inverse = new Array(change.sortedIndices.length);
+				for (let oldIndex = 0; oldIndex < change.sortedIndices.length; oldIndex++)
+					inverse[change.sortedIndices[oldIndex]] = oldIndex;
+
+				// Precompute current index → old index mapping
+				const lookup = new Map<T, number>();
+				this.forEach((item, i) => lookup.set(item, inverse[i]));
+
+				this.sort((a, b) => lookup.get(a)! - lookup.get(b)!);
+			}
+		}
+
 		throw err;
 	});
 };

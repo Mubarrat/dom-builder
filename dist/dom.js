@@ -113,7 +113,7 @@ const arrayObservable = function (initialValues) {
                     };
                 case "reverse":
                     return () => {
-                        target.tryChange(array.reverse, { reversed: true });
+                        target.tryChange(() => array.reverse(), { reversed: true });
                         return receiver;
                     };
                 case "sort":
@@ -202,7 +202,7 @@ const arrayObservable = function (initialValues) {
             }
             if (prop === "length") {
                 return {
-                    configurable: false,
+                    configurable: true,
                     enumerable: false,
                     value: array.length,
                     writable: true,
@@ -250,10 +250,29 @@ arrayObservable.prototype.bindMap = function (mapper) {
     });
 };
 arrayObservable.prototype.optimistic = function (updater, promise) {
-    const snapshot = [...this];
+    const changes = [];
+    const capture = (e) => changes.push(e);
+    this.addEventListener("valuechanged", capture);
     updater(this);
+    this.removeEventListener("valuechanged", capture);
     return promise.catch(err => {
-        this.splice(0, this.length, ...snapshot);
+        for (let i = changes.length - 1; i >= 0; i--) {
+            const change = changes[i];
+            if ("index" in change) {
+                this.splice(change.index, change.newItems?.length ?? 0, ...(change.oldItems ?? []));
+            }
+            else if ("reversed" in change) {
+                this.reverse();
+            }
+            else if ("sortedIndices" in change) {
+                const inverse = new Array(change.sortedIndices.length);
+                for (let oldIndex = 0; oldIndex < change.sortedIndices.length; oldIndex++)
+                    inverse[change.sortedIndices[oldIndex]] = oldIndex;
+                const lookup = new Map();
+                this.forEach((item, i) => lookup.set(item, inverse[i]));
+                this.sort((a, b) => lookup.get(a) - lookup.get(b));
+            }
+        }
         throw err;
     });
 };
