@@ -3,9 +3,7 @@ import { test, expect } from "@playwright/test";
 
 const filePath = path.resolve("tests/test.html");
 
-test.beforeEach(async ({ page }) => {
-    await page.goto(`file://${filePath}`);
-});
+test.beforeEach(({ page }) => page.goto(`file://${filePath}`));
 
 test.describe("cstr", () => {
     test("returns static string if no observables", async ({ page }) => {

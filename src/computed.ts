@@ -40,7 +40,7 @@ declare interface Function {
 	 * @param observables The observables this computed depends on.
 	 * @returns A computed observable whose value is derived from this function.
 	 */
-	computed<T>(this: () => T, ...observables: baseObservable[]): computed<T>;
+	computed: computedConstructor;
 }
 
 /**
@@ -50,7 +50,17 @@ declare interface Function {
  */
 interface computed<T = any> extends baseObservable<T> {}
 
-Function.prototype.computed = function(...observables) {
+interface computedConstructor extends Omit<baseObservableConstructor, ''> {
+	<T>(this: () => T, ...observables: baseObservable[]): computed<T>;
+
+	/**
+	 * Prototype object for all {@link computed} instances.
+	 * Useful for extending methods or introspection.
+	 */
+	prototype: computed;
+}
+
+Function.prototype.computed = function<T>(this: () => T, ...observables: baseObservable[]) {
 	// Wrap the function as a baseObservable
 	const obs = baseObservable(this);
 
@@ -64,7 +74,7 @@ Function.prototype.computed = function(...observables) {
 	// Set prototype chain to inherit computed methods
 	Object.setPrototypeOf(obs, Function.prototype.computed.prototype);
 	return obs;
-};
+} as computedConstructor;
 
 // Establish prototype and inheritance
 Function.prototype.computed.prototype = Object.create(baseObservable.prototype) as computed;

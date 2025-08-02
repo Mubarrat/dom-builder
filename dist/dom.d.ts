@@ -122,17 +122,31 @@ interface baseObservable<T = any> extends EventTarget {
      */
     coercible(coerce?: (...args: any[]) => any): this;
 }
-declare namespace baseObservable {
+interface baseObservableConstructor {
+    <T = any>(baseFunction: (...args: any[]) => T): baseObservable<T>;
     /**
      * Prototype object for all {@link baseObservable} instances.
      * Useful for extending methods or introspection.
      */
-    var prototype: baseObservable;
+    prototype: baseObservable;
+    /**
+     * Binds a value or {@link baseObservable} to a setter and optional observer.
+     *
+     * **Behavior:**
+     * - Plain value: Invokes `set` immediately once.
+     * - Observable:
+     *   - Calls `set` with its current value.
+     *   - Subscribes to `"valuechanged"` if mode supports output (`to` or `two-way`).
+     *   - Invokes `observe` if mode supports input (`from` or `two-way`).
+     *
+     * @template T Type of the value being bound.
+     * @param observable The source value or {@link baseObservable}.
+     * @param set Callback to update target when value changes.
+     * @param observe Optional callback for reverse (input) binding.
+     */
+    autoBind<T>(observable: baseObservable<T> | T, set: (val: T) => void, observe?: (val: T) => void): void;
 }
-declare function baseObservable<T = any>(baseFunction: (...args: any[]) => T): baseObservable<T>;
-declare namespace baseObservable {
-    var autoBind: <T>(observable: baseObservable<T> | T, set: (val: T) => void, observe?: (val: T) => void) => void;
-}
+declare const baseObservable: baseObservableConstructor;
 /**
  * Describes changes to an {@link arrayObservable}.
  *
@@ -219,14 +233,15 @@ interface arrayObservable<T = any> extends baseObservable<T[]>, Array<T> {
      */
     optimistic<R>(updater: (current: arrayObservable<T>) => void, promise: Promise<R>): Promise<R>;
 }
-declare namespace arrayObservable {
+interface arrayObservableConstructor extends Omit<baseObservableConstructor, ''> {
+    <T>(initialValues: Iterable<T>): arrayObservable<T>;
     /**
      * Prototype object for all {@link arrayObservable} instances.
      * Useful for extending methods or introspection.
      */
-    var prototype: arrayObservable;
+    prototype: arrayObservable;
 }
-declare function arrayObservable<T>(initialValues: Iterable<T>): arrayObservable<T>;
+declare const arrayObservable: arrayObservableConstructor;
 /**
  * Augments the global `Function` type with the `computed` method.
  *
@@ -244,7 +259,7 @@ declare interface Function {
      * @param observables The observables this computed depends on.
      * @returns A computed observable whose value is derived from this function.
      */
-    computed<T>(this: () => T, ...observables: baseObservable[]): computed<T>;
+    computed: computedConstructor;
 }
 /**
  * Represents a computed observable, created via {@link Function.prototype.computed}.
@@ -252,6 +267,14 @@ declare interface Function {
  * @template T The type of the computed value.
  */
 interface computed<T = any> extends baseObservable<T> {
+}
+interface computedConstructor extends Omit<baseObservableConstructor, ''> {
+    <T>(this: () => T, ...observables: baseObservable[]): computed<T>;
+    /**
+     * Prototype object for all {@link computed} instances.
+     * Useful for extending methods or introspection.
+     */
+    prototype: computed;
 }
 declare function cstr(strings: TemplateStringsArray, ...values: any[]): string | computed<string>;
 /**
@@ -423,12 +446,13 @@ interface observable<T = any> extends baseObservable<T> {
      */
     optimistic<R>(updater: (current: T) => T, promise: Promise<R>): Promise<R>;
 }
-declare namespace observable {
+interface observableConstructor extends Omit<baseObservableConstructor, ''> {
+    <T>(initialValue?: T | undefined): observable<T>;
     /**
      * Prototype object for all {@link observable} instances.
      * Allows introspection or extension of shared behavior.
      */
-    var prototype: observable;
+    prototype: observable;
 }
-declare function observable<T>(initialValue?: T | undefined): observable<T>;
+declare const observable: observableConstructor;
 //# sourceMappingURL=dom.d.ts.map

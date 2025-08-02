@@ -98,9 +98,7 @@ interface baseObservable<T = any> extends EventTarget {
 	 * Defaults to always valid.
 	 * @returns The original observable with an additional `isValid` property.
 	 */
-	validatable(
-		validator?: (val: T) => boolean
-	): this & {
+	validatable(validator?: (val: T) => boolean): this & {
 		isValid: baseObservable<boolean>;
 	};
 
@@ -113,15 +111,34 @@ interface baseObservable<T = any> extends EventTarget {
 	coercible(coerce?: (...args: any[]) => any): this;
 }
 
-declare namespace baseObservable {
+interface baseObservableConstructor {
+	<T = any>(baseFunction: (...args: any[]) => T): baseObservable<T>;
+
 	/**
 	 * Prototype object for all {@link baseObservable} instances.
 	 * Useful for extending methods or introspection.
 	 */
-	var prototype: baseObservable;
+	prototype: baseObservable;
+
+	/**
+	 * Binds a value or {@link baseObservable} to a setter and optional observer.
+	 *
+	 * **Behavior:**
+	 * - Plain value: Invokes `set` immediately once.
+	 * - Observable: 
+	 *   - Calls `set` with its current value.
+	 *   - Subscribes to `"valuechanged"` if mode supports output (`to` or `two-way`).
+	 *   - Invokes `observe` if mode supports input (`from` or `two-way`).
+	 *
+	 * @template T Type of the value being bound.
+	 * @param observable The source value or {@link baseObservable}.
+	 * @param set Callback to update target when value changes.
+	 * @param observe Optional callback for reverse (input) binding.
+	 */
+	autoBind<T>(observable: baseObservable<T> | T, set: (val: T) => void, observe?: (val: T) => void): void;
 }
 
-function baseObservable<T = any>(baseFunction: (...args: any[]) => T): baseObservable<T> {
+const baseObservable = function<T = any>(baseFunction: (...args: any[]) => T): baseObservable<T> {
 	// Create a callable object that delegates to the provided baseFunction
 	const callable = ((...args) => baseFunction(...args)) as baseObservable<T>;
 
@@ -132,7 +149,7 @@ function baseObservable<T = any>(baseFunction: (...args: any[]) => T): baseObser
 	callable._eventTarget = new EventTarget();
 
 	return callable;
-}
+} as baseObservableConstructor;
 
 // Establish prototype chain: baseObservable.prototype → EventTarget.prototype
 Object.setPrototypeOf(baseObservable.prototype, EventTarget.prototype);
@@ -200,26 +217,7 @@ Object.defineProperty(baseObservable.prototype, Symbol.toStringTag, {
 	configurable: false
 });
 
-/**
- * Binds a value or {@link baseObservable} to a setter and optional observer.
- *
- * **Behavior:**
- * - Plain value: Invokes `set` immediately once.
- * - Observable: 
- *   - Calls `set` with its current value.
- *   - Subscribes to `"valuechanged"` if mode supports output (`to` or `two-way`).
- *   - Invokes `observe` if mode supports input (`from` or `two-way`).
- *
- * @template T Type of the value being bound.
- * @param observable The source value or {@link baseObservable}.
- * @param set Callback to update target when value changes.
- * @param observe Optional callback for reverse (input) binding.
- */
-baseObservable.autoBind = <T>(
-	observable: baseObservable<T> | T,
-	set: (val: T) => void,
-	observe?: (val: T) => void
-) => {
+baseObservable.autoBind = <T>(observable: baseObservable<T> | T, set: (val: T) => void, observe?: (val: T) => void) => {
 	// Handle plain value binding (not an observable)
 	if (!(observable instanceof baseObservable)) {
 		set(observable);

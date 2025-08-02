@@ -15,12 +15,12 @@ class ValueChangeEvent extends Event {
         }
     }
 }
-function baseObservable(baseFunction) {
+const baseObservable = function (baseFunction) {
     const callable = ((...args) => baseFunction(...args));
     Object.setPrototypeOf(callable, baseObservable.prototype);
     callable._eventTarget = new EventTarget();
     return callable;
-}
+};
 Object.setPrototypeOf(baseObservable.prototype, EventTarget.prototype);
 Object.setPrototypeOf(baseObservable, EventTarget);
 baseObservable.prototype.addEventListener = function (...args) { return this._eventTarget.addEventListener(...args); };
@@ -76,7 +76,7 @@ baseObservable.autoBind = (observable, set, observe) => {
     if (observable.type === "from" || observable.type === "two-way")
         observe?.(evaluated);
 };
-function arrayObservable(initialValues) {
+const arrayObservable = function (initialValues) {
     const array = [...initialValues];
     const obs = baseObservable(() => [...array]);
     Object.setPrototypeOf(obs, arrayObservable.prototype);
@@ -211,7 +211,7 @@ function arrayObservable(initialValues) {
             return Object.getOwnPropertyDescriptor(target, prop);
         },
     });
-}
+};
 Object.setPrototypeOf(arrayObservable.prototype, baseObservable.prototype);
 Object.setPrototypeOf(arrayObservable, baseObservable);
 arrayObservable.prototype.bindMap = function (mapper) {
@@ -513,7 +513,7 @@ Object.defineProperties(Window.prototype, {
         enumerable: true
     }
 });
-function observable(initialValue = undefined) {
+const observable = function (initialValue) {
     let value = initialValue;
     const obs = baseObservable(function (newValue) {
         if (arguments.length !== 0 && !Object.is(value, newValue)) {
@@ -525,7 +525,7 @@ function observable(initialValue = undefined) {
     obs.bindTo = Object.setPrototypeOf(Object.assign((...args) => obs(...args), { type: "to" }), obs);
     obs.bindFrom = Object.setPrototypeOf(Object.assign((...args) => obs(...args), { type: "from" }), obs);
     return obs;
-}
+};
 Object.setPrototypeOf(observable.prototype, baseObservable.prototype);
 Object.setPrototypeOf(observable, baseObservable);
 observable.prototype.type = "two-way";

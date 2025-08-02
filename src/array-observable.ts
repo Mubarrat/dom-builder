@@ -112,15 +112,17 @@ interface arrayObservable<T = any> extends baseObservable<T[]>, Array<T> {
 	optimistic<R>(updater: (current: arrayObservable<T>) => void, promise: Promise<R>): Promise<R>;
 }
 
-declare namespace arrayObservable {
+interface arrayObservableConstructor extends Omit<baseObservableConstructor, ''> {
+	<T>(initialValues: Iterable<T>): arrayObservable<T>;
+
 	/**
 	 * Prototype object for all {@link arrayObservable} instances.
 	 * Useful for extending methods or introspection.
 	 */
-	var prototype: arrayObservable;
+	prototype: arrayObservable;
 }
 
-function arrayObservable<T>(initialValues: Iterable<T>): arrayObservable<T> {
+const arrayObservable = function<T>(initialValues: Iterable<T>): arrayObservable<T> {
 	// Internal backing storage (never directly exposed to users)
 	const array: T[] = [...initialValues];
 
@@ -278,7 +280,7 @@ function arrayObservable<T>(initialValues: Iterable<T>): arrayObservable<T> {
 			return Object.getOwnPropertyDescriptor(target, prop);
 		},
 	});
-}
+} as arrayObservableConstructor;
 
 Object.setPrototypeOf(arrayObservable.prototype, baseObservable.prototype);
 Object.setPrototypeOf(arrayObservable, baseObservable);

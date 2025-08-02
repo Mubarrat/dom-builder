@@ -85,15 +85,17 @@ interface observable<T = any> extends baseObservable<T> {
 	optimistic<R>(updater: (current: T) => T, promise: Promise<R>): Promise<R>;
 }
 
-declare namespace observable {
+interface observableConstructor extends Omit<baseObservableConstructor, ''> {
+	<T>(initialValue?: T | undefined): observable<T>;
+
 	/**
 	 * Prototype object for all {@link observable} instances.
 	 * Allows introspection or extension of shared behavior.
 	 */
-	var prototype: observable;
+	prototype: observable;
 }
 
-function observable<T>(initialValue: T | undefined = undefined): observable<T> {
+const observable = function<T>(initialValue?: T | undefined): observable<T> {
 	let value = initialValue;
 
 	// Wrap the internal value in a baseObservable for reactivity
@@ -112,7 +114,7 @@ function observable<T>(initialValue: T | undefined = undefined): observable<T> {
 	obs.bindFrom = Object.setPrototypeOf(Object.assign((...args) => obs(...args), { type: "from" }), obs);
 
 	return obs;
-}
+} as observableConstructor;
 
 Object.setPrototypeOf(observable.prototype, baseObservable.prototype);
 Object.setPrototypeOf(observable, baseObservable);
