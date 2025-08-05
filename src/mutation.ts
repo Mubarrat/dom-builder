@@ -67,7 +67,8 @@
 	 * div.className = "new-class"; // triggers callback
 	 * ```
 	 */
-	var observeElementAttr = (element: Element, attribute: string, callback: () => void) => {
+	// Use var to pollute.
+	var observeElementAttr = (element: Node, attribute: string, callback: () => void) => {
 		let handlers = attributeObservers.get(element);
 		if (!handlers) attributeObservers.set(element, handlers = new Map<string | null, Set<() => void>>());
 

@@ -60,21 +60,38 @@ interface computedConstructor extends Omit<baseObservableConstructor, ''> {
 	prototype: computed;
 }
 
-Function.prototype.computed = function<T>(this: () => T, ...observables: baseObservable[]) {
-	// Wrap the function as a baseObservable
-	const obs = baseObservable(this);
+// Encapsulated in a block scope to avoid polluting the global scope.
+{
+	const computedRegistry = new FinalizationRegistry<{ observers: baseObservable[], listener: () => void }>(
+		// Cleanup when computed observable is GC'd
+		({ observers, listener }) => observers.forEach(obs => obs.removeEventListener("valuechanged", listener)));
 
-	// Subscribe computed to changes in dependencies
-	observables.forEach(observable => {
-		if (observable instanceof baseObservable) {
-			observable.addEventListener('valuechanged', obs.notify);
-		}
-	});
-
-	// Set prototype chain to inherit computed methods
-	Object.setPrototypeOf(obs, Function.prototype.computed.prototype);
-	return obs;
-} as computedConstructor;
+	Function.prototype.computed = function<T>(this: () => T, ...observables: baseObservable[]) {
+		const obs = baseObservable(this);
+		const weakObs = new WeakRef(obs);
+		const token = {}; // Unique token for unregister
+		const notifyListener = () => {
+			const strongObs = weakObs.deref();
+			if (strongObs) {
+				strongObs.notify();
+			} else {
+				// Dead -> cleanup immediately (backup if FinalizationRegistry delayed)
+				observables.forEach(o => o.removeEventListener("valuechanged", notifyListener));
+				computedRegistry.unregister(token); // <--- Proper unregister
+			}
+		};
+		// Attach listeners
+		observables.forEach(o => {
+			if (o instanceof baseObservable) {
+				o.addEventListener("valuechanged", notifyListener);
+			}
+		});
+		// Register for post-GC cleanup
+		computedRegistry.register(obs, { observers: observables, listener: notifyListener }, token);
+		Object.setPrototypeOf(obs, Function.prototype.computed.prototype);
+		return obs;
+	} as computedConstructor;
+}
 
 // Establish prototype and inheritance
 Function.prototype.computed.prototype = Object.create(baseObservable.prototype) as computed;

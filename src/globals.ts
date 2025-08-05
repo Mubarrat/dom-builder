@@ -158,185 +158,260 @@ declare const $mml: DomBuilders["http://www.w3.org/1998/Math/MathML"];
 
 Object.defineProperties(Document.prototype, {
 	$dom: {
-		value(namespace) {
-			// Proxy allows dynamic tag creation: $html.div(), $svg.circle(), etc.
-			return new Proxy({}, {
-				get: (_, prop) => {
-					if (typeof prop !== "string") return undefined;
-					if (prop === "toString") return () => `DOM Proxy for namespace: ${namespace}`;
+		get(this: Document) {
+			return (namespace: string) => {
+				// Proxy allows dynamic tag creation: $html.div(), $svg.circle(), etc.
+				return new Proxy({}, {
+					get: (_, prop) => {
+						if (typeof prop !== "string") return undefined;
+						if (prop === "toString") return () => `DOM Proxy for namespace: ${namespace}`;
 
-					// Convert camelCase to kebab-case for tag names (e.g., myTag -> my-tag)
-					const tagName = prop.replace(/([A-Z])/g, "-$1").toLowerCase();
-					return (...args) => {
-						const element = this.createElementNS(namespace, tagName);
-						for (const arg of flattenIterable(args)) {
-							if (arg === null || arg === undefined || arg === false)
-								continue;
-							if (arg.constructor === Object && arg[Symbol.iterator] === undefined && Symbol.asyncIterator && arg[Symbol.asyncIterator] === undefined) {
-								for (const [attr, value] of Object.entries(arg as Record<string, any>)) {
-									if (attr === 'style') {
-										baseObservable.autoBind(value,
-											v => typeof v === 'string'
-												? element.setAttribute('style', v)
-												: Object.entries(v as Record<string, any>).forEach(([prop, value]) =>
-													baseObservable.autoBind(value,
-														v => element.style[prop] = v,
-														() => observeElementAttr(element, 'style', () => value(element.style[prop])))),
-											v => observeElementAttr(element, 'style', () => value(typeof v === 'string'
-												? element.getAttribute('style') || ''
-												: Object.assign({}, element.style))));
-									} else if (attr === 'on' && typeof value === 'object' && value) {
-										// Attach multiple event listeners from an object
-										for (const [eventName, handler] of Object.entries(value)) {
-											for (const event of flattenIterable([handler])) {
-												if (typeof event === 'function') {
-													element.addEventListener(eventName.toLowerCase(), event);
-												}
-											}
-										}
-									} else if (attr.startsWith('on')) {
-										// Attach single event listener (e.g., onclick)
-										for (const event of flattenIterable([value])) {
-											if (typeof event === 'function') {
-												element.addEventListener(attr.slice(2).toLowerCase(), event);
-											}
-										}
-									} else if (attr === 'data' && typeof value === 'object') {
-										// Handle data-* attributes, including observable bindings
-										for (const [name, data] of Object.entries(value as Record<string, any>))
-											baseObservable.autoBind(data,
-												v => element.dataset[name] = typeof v === 'object' ? JSON.stringify(v) : v,
-												v => observeElementAttr(element, `data-${name}`, () => {
-													const newValue = element.dataset[name];
-													try {
-														data(JSON.parse(newValue));
-													} catch {
-														data(newValue);
+						// Convert camelCase to kebab-case for tag names (e.g., myTag -> my-tag)
+						const tagName = prop.replace(/([A-Z])/g, "-$1").toLowerCase();
+						return (...args) => {
+							const element = this.createElementNS(namespace, tagName);
+							for (const arg of flattenIterable(args)) {
+								if (arg === null || arg === undefined || arg === false)
+									continue;
+								if (arg.constructor === Object && arg[Symbol.iterator] === undefined && Symbol.asyncIterator && arg[Symbol.asyncIterator] === undefined) {
+									for (const [attr, value] of Object.entries(arg as Record<string, any>)) {
+										if (attr === 'style' && element instanceof HTMLElement) {
+											baseObservable.autoBind(value,
+												v => typeof v === 'string'
+													? element.setAttribute('style', v)
+													: Object.entries(v as Record<string, any>).forEach(([prop, value]) =>
+														baseObservable.autoBind(value,
+															v => element.style[prop] = v,
+															() => observeElementAttr(element, 'style', () => value(element.style[prop])))),
+												v => observeElementAttr(element, 'style', () => value(typeof v === 'string'
+													? element.getAttribute('style') || ''
+													: Object.assign({}, element.style))));
+										} else if (attr === 'on' && typeof value === 'object' && value) {
+											// Attach multiple event listeners from an object
+											for (const [eventName, handler] of Object.entries(value)) {
+												for (const event of flattenIterable([handler])) {
+													if (typeof event === 'function') {
+														element.addEventListener(eventName.toLowerCase(), event);
 													}
-												})
-											);
-									} else if (attr.toLowerCase().startsWith('ref')) {
-										// Call ref functions with the element as argument
-										for (const event of flattenIterable([value])) {
-											if (typeof event === 'function') {
-												event.bind(element, element);
-											}
-										}
-									} else if (attr === 'value' && (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) {
-										baseObservable.autoBind(value,
-											v => element.value = v,
-											() => element.addEventListener(element instanceof HTMLSelectElement ? 'change' : 'input', () => value(element.value))
-										);
-									} else if (attr === 'checked' && (element instanceof HTMLInputElement && (element.type === 'checkbox' || element.type === 'radio'))) {
-										baseObservable.autoBind(value,
-											v => element.checked = v,
-											() => element.addEventListener("change", () => value(element.checked))
-										);
-									} else if (value !== undefined) {
-										baseObservable.autoBind(value,
-											v => attr in element
-													? element[attr] = v
-													: element.setAttribute(attr, typeof v === 'object' ? JSON.stringify(v) : v),
-											() => {
-												let newVal = attr in element ? element[attr] : element.getAttribute(attr);
-												try {
-													value(JSON.parse(newVal));
-												} catch {
-													value(newVal);
 												}
 											}
-										);
-									}
-								}
-							} else if (arg instanceof baseObservable) {
-								if (arg instanceof arrayObservable) {
-									const anchor = new Text();
-									element.append(anchor);
-									function update() {
-										throw new Error("Implementation is in progress...");
-									}
-									update();
-									arg.addEventListener('valuechanged', update);
-								} else {
-									// Observable content: replace children when observable changes
-									const anchor = new Text();
-									element.append(anchor);
-									let currentNodes: (Element | CharacterData)[] = [];
-									function update() {
-										for (const node of currentNodes) node.remove();
-										let projected = arg();
-										while (typeof projected === 'function') projected = projected.call(element, element);
-										const fragment = new DocumentFragment();
-										fragment.append(...flattenRenderable(projected).filter(node => node !== null && node !== undefined && node !== false));
-										currentNodes = Array.from(fragment.children);
-										anchor.after(fragment);
-									};
-									update();
-									arg.addEventListener('valuechanged', update);
-								}
-							} else if (Symbol.asyncIterator) {
-								(function render(arg, givenAnchor?: Text) {
-									for (const item of flattenRenderable(arg).filter(n => n != null && n !== false && n !== undefined)) {
-										if (typeof item[Symbol.asyncIterator] === 'function') {
-											const anchor = new Text();
-											if (givenAnchor) {
-												givenAnchor.before(anchor);
-											} else {
-												element.append(anchor);
+										} else if (attr.startsWith('on')) {
+											// Attach single event listener (e.g., onclick)
+											for (const event of flattenIterable([value])) {
+												if (typeof event === 'function') {
+													element.addEventListener(attr.slice(2).toLowerCase(), event);
+												}
 											}
-											(async () => { for await (const chunk of item) render(chunk, anchor) })();
-										} else if (givenAnchor) {
-											givenAnchor.before(item);
-										} else {
-											element.append(item);
+										} else if (attr === 'data' && typeof value === 'object' && (element instanceof HTMLElement || element instanceof SVGElement || element instanceof MathMLElement)) {
+											// Handle data-* attributes, including observable bindings
+											for (const [name, data] of Object.entries(value as Record<string, any>))
+												baseObservable.autoBind(data,
+													v => element.dataset[name] = typeof v === 'object' ? JSON.stringify(v) : v,
+													v => observeElementAttr(element, `data-${name.replace(/([A-Z])/g, "-$1").toLowerCase()}`, () => {
+														const newValue = element.dataset[name]!;
+														try {
+															data(JSON.parse(newValue));
+														} catch {
+															data(newValue);
+														}
+													})
+												);
+										} else if (attr === 'value' && (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) {
+											baseObservable.autoBind(value,
+												v => element.value = v,
+												() => element.addEventListener(element instanceof HTMLSelectElement ? 'change' : 'input', () => value(element.value))
+											);
+										} else if (attr === 'checked' && (element instanceof HTMLInputElement && (arg.type === 'checkbox' || arg.type === 'radio'))) {
+											baseObservable.autoBind(value,
+												v => element.checked = v,
+												() => element.addEventListener("change", () => value(element.checked))
+											);
+										} else if (value !== undefined) {
+											baseObservable.autoBind(value,
+												v => attr in element
+														? element[attr] = v
+														: element.setAttribute(attr, typeof v === 'object' ? JSON.stringify(v) : v),
+												() => {
+													let newVal = attr in element ? element[attr] : element.getAttribute(attr);
+													try {
+														value(JSON.parse(newVal));
+													} catch {
+														value(newVal);
+													}
+												}
+											);
 										}
 									}
-								})(arg);
-							} else {
-								element.append(...flattenRenderable(arg).filter(n => n != null && n !== false));
+								} else if (arg instanceof baseObservable) {
+									if (arg instanceof arrayObservable) {
+										const anchor = new Text();
+										element.append(anchor);
+
+										// Track anchors for each array element
+										const childAnchors: Text[] = [];
+
+										function createNode(value: any): Node[] {
+											// Project value like in normal observable
+											while (typeof value === 'function') value = value.call(element, element);
+											return flattenRenderable(value).filter(node => node !== null && node !== undefined && node !== false);
+										}
+
+										// Initial render
+										arg().forEach((item, i) => {
+											const marker = new Text();
+											childAnchors[i] = marker;
+											anchor.before(marker, ...createNode(item));
+										});
+
+										function update(change: ArrayChange<any>) {
+											if ("index" in change) {
+												// Handle splice/insert/remove
+												const { index, oldItems, newItems } = change;
+
+												// Remove old nodes
+												if (oldItems?.length) {
+													for (let i = 0; i < oldItems.length; i++) {
+														const marker = childAnchors[index];
+														let next = marker.nextSibling;
+														while (next && next !== childAnchors[index + 1]) {
+															const toRemove = next;
+															next = next.nextSibling;
+															toRemove.remove();
+														}
+														marker.remove();
+														childAnchors.splice(index, 1);
+													}
+												}
+
+												// Insert new nodes
+												if (newItems?.length) {
+													for (let i = 0; i < newItems.length; i++) {
+														const marker = new Text();
+														const refNode = childAnchors[index] || anchor;
+														refNode.before(marker, ...createNode(newItems[i]));
+														childAnchors.splice(index + i, 0, marker);
+													}
+												}
+											}
+											else if ("reversed" in change) {
+												// Reverse DOM order
+												const nodes: Node[] = [];
+												for (let i = 0; i < childAnchors.length; i++) {
+													const marker = childAnchors[i];
+													let cursor = marker.nextSibling;
+													const group: Node[] = [marker];
+													while (cursor && (i === childAnchors.length - 1 || cursor !== childAnchors[i + 1])) {
+														group.push(cursor);
+														cursor = cursor.nextSibling;
+													}
+													nodes.push(...group);
+												}
+												nodes.reverse().forEach(node => anchor.before(node));
+												childAnchors.reverse();
+											}
+											else if ("sortedIndices" in change) {
+												// Reorder based on sortedIndices
+												const mapping = change.sortedIndices;
+												const newOrder: Text[] = [];
+												for (let i = 0; i < mapping.length; i++) {
+													const marker = childAnchors[mapping[i]];
+													let cursor = marker;
+													const group: Node[] = [];
+													do {
+														group.push(cursor);
+														cursor = cursor.nextSibling as Text;
+													} while (cursor && mapping.includes(childAnchors.indexOf(cursor as Text)) === false);
+													newOrder.push(marker);
+													group.forEach(n => anchor.before(n));
+												}
+												childAnchors.splice(0, childAnchors.length, ...newOrder);
+											}
+										}
+
+										// Apply incremental updates
+										arg.addEventListener("valuechanged", (e: ValueChangeEvent<ArrayChange<any>>) =>
+											update(e as Extract<ValueChangeEvent<ArrayChange<any>>, ArrayChange<any>>));
+									} else {
+										// Observable content: replace children when observable changes
+										const anchor = new Text();
+										element.append(anchor);
+										let currentNodes: (Element | CharacterData)[] = [];
+										function update() {
+											for (const node of currentNodes) node.remove();
+											let projected = arg();
+											while (typeof projected === 'function') projected = projected.call(element, element);
+											const fragment = new DocumentFragment();
+											fragment.append(...flattenRenderable(projected).filter(node => node !== null && node !== undefined && node !== false));
+											currentNodes = Array.from(fragment.children);
+											anchor.after(fragment);
+										};
+										update();
+										arg.addEventListener('valuechanged', update);
+									}
+								} else if (Symbol.asyncIterator) {
+									(function render(arg, givenAnchor?: Text) {
+										for (const item of flattenRenderable(arg).filter(n => n != null && n !== false && n !== undefined)) {
+											if (typeof item[Symbol.asyncIterator] === 'function') {
+												const anchor = new Text();
+												if (givenAnchor) {
+													givenAnchor.before(anchor);
+												} else {
+													element.append(anchor);
+												}
+												(async () => { for await (const chunk of item) render(chunk, anchor) })();
+											} else if (givenAnchor) {
+												givenAnchor.before(item);
+											} else {
+												element.append(item);
+											}
+										}
+									})(arg);
+								} else {
+									element.append(...flattenRenderable(arg).filter(n => n != null && n !== false));
+								}
 							}
-						}
-						return element;
+							return element;
 
-						function shouldBeIterated(x) {
-							return (
-								x != null &&
-								typeof x !== 'string' &&
-								typeof x !== 'function' &&
-								typeof x[Symbol.iterator] === 'function' &&
-								!(x instanceof Node) &&
-								!(x instanceof Date) &&
-								!(x instanceof RegExp)
-							);
-						}
+							function shouldBeIterated(x) {
+								return (
+									x != null &&
+									typeof x !== 'string' &&
+									typeof x !== 'function' &&
+									typeof x[Symbol.iterator] === 'function' &&
+									!(x instanceof Node) &&
+									!(x instanceof Date) &&
+									!(x instanceof RegExp)
+								);
+							}
 
-						function flattenIterable(iterable) {
-							return shouldBeIterated(iterable) ? Array.from(iterable).flatMap(flattenIterable) : [iterable];
-						}
+							function flattenIterable(iterable) {
+								return shouldBeIterated(iterable) ? Array.from(iterable).flatMap(flattenIterable) : [iterable];
+							}
 
-						function flattenRenderable(renderable) {
-							while (typeof renderable === 'function') renderable = renderable.call(element, element);
-							return shouldBeIterated(renderable) ? Array.from(renderable).flatMap(flattenRenderable) : [renderable];
-						}
-					};
-				}
-			});
+							function flattenRenderable(renderable) {
+								while (typeof renderable === 'function') renderable = renderable.call(element, element);
+								return shouldBeIterated(renderable) ? Array.from(renderable).flatMap(flattenRenderable) : [renderable];
+							}
+						};
+					}
+				});
+			}
 		},
 		configurable: false,
 		enumerable: true
 	},
 	$html: {
-		get() { return this.$dom("http://www.w3.org/1999/xhtml"); },
+		get(this: Document) { return this.$dom("http://www.w3.org/1999/xhtml"); },
 		configurable: false,
 		enumerable: true
 	},
 	$svg: {
-		get() { return this.$dom("http://www.w3.org/2000/svg"); },
+		get(this: Document) { return this.$dom("http://www.w3.org/2000/svg"); },
 		configurable: false,
 		enumerable: true
 	},
 	$mml: {
-		get() { return this.$dom("http://www.w3.org/1998/Math/MathML"); },
+		get(this: Document) { return this.$dom("http://www.w3.org/1998/Math/MathML"); },
 		configurable: false,
 		enumerable: true
 	}
@@ -344,22 +419,22 @@ Object.defineProperties(Document.prototype, {
 
 Object.defineProperties(Window.prototype, {
     $dom: {
-        get() { return this.document.$dom; },
+        get(this: Window) { return this.document.$dom; },
         configurable: false,
         enumerable: true
     },
     $html: {
-        get() { return this.document.$html; },
+        get(this: Window) { return this.document.$html; },
         configurable: false,
         enumerable: true
     },
     $svg: {
-        get() { return this.document.$svg; },
+        get(this: Window) { return this.document.$svg; },
         configurable: false,
         enumerable: true
     },
     $mml: {
-        get() { return this.document.$mml; },
+        get(this: Window) { return this.document.$mml; },
         configurable: false,
         enumerable: true
     }

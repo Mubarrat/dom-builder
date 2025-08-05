@@ -162,7 +162,12 @@ baseObservable.prototype.removeEventListener = function(...args) { return this._
 baseObservable.prototype.dispatchEvent = function(...args) { return this._eventTarget.dispatchEvent(...args) };
 
 // Default binding mode is "to" (ViewModel → UI)
-baseObservable.prototype.type = "to";
+Object.defineProperty(baseObservable.prototype, 'type', {
+	value: 'to',
+	writable: false,
+	configurable: false,
+	enumerable: true
+});
 
 baseObservable.prototype.notifyBefore = function (change) {
 	return this.dispatchEvent(new ValueChangeEvent("valuechanging", change, { cancelable: true }));
@@ -218,21 +223,31 @@ Object.defineProperty(baseObservable.prototype, Symbol.toStringTag, {
 });
 
 baseObservable.autoBind = <T>(observable: baseObservable<T> | T, set: (val: T) => void, observe?: (val: T) => void) => {
-	// Handle plain value binding (not an observable)
+	// Plain value: just set it
 	if (!(observable instanceof baseObservable)) {
 		set(observable);
-		return;
+		return () => {}; // No cleanup needed
 	}
 
-	// Set initial value
-	const evaluated = observable();
-	set(evaluated);
+	// Initial set
+	set(observable());
 
-	// Subscribe to output if mode allows
-	if (observable.type === "to" || observable.type === "two-way")
-		observable.addEventListener("valuechanged", () => set(observable()));
+	const listener = () => set(observable());
 
-	// Invoke observe callback for input modes
-	if (observable.type === "from" || observable.type === "two-way")
-		observe?.(evaluated);
+	// Bind for "to" or "two-way"
+	if (observable.type === "to" || observable.type === "two-way") {
+		observable.addEventListener("valuechanged", listener);
+	}
+
+	// Bind for "from" or "two-way"
+	if (observable.type === "from" || observable.type === "two-way") {
+		observe?.(observable());
+	}
+
+	// Return unbind function
+	return () => {
+		if (observable.type === "to" || observable.type === "two-way") {
+			observable.removeEventListener("valuechanged", listener)
+		}
+	};
 };

@@ -292,15 +292,30 @@ Object.setPrototypeOf(arrayObservable, baseObservable);
 arrayObservable.prototype.bindMap = function<T, U>(
 	mapper: (item: T, index: number, array: arrayObservable<T>) => U
 ): arrayObservable<U> {
-	// Initial mapping of existing items
+	// Initial mapping
 	const mapped = arrayObservable(this.map((item, i) => mapper.call(this, item, i, this)));
 
-	// Synchronize mapped array on each source mutation
-	this.addEventListener("valuechanged", (change: ValueChangeEvent<ArrayChange<T>>) => {
+	// Create WeakRef to mapped array
+	const weakMapped = new WeakRef(mapped);
+
+	// Register cleanup for mapped when GC’d
+	const registry = new FinalizationRegistry(() =>
+		// On mapped GC, unsubscribe automatically
+		this.removeEventListener("valuechanged", updateListener)
+	);
+
+	// Register the mapped observable for cleanup
+	registry.register(mapped, weakMapped);
+
+	// Listener to sync mapped array
+	const updateListener = (change: ValueChangeEvent<ArrayChange<T>>) => {
+		const target = weakMapped.deref();
+		if (!target) return; // GC’d
+
 		if ("index" in change) {
 			const { index, newItems, oldItems } = change;
 			if ((oldItems && oldItems.length) || (newItems && newItems.length)) {
-				mapped.splice(
+				target.splice(
 					index,
 					oldItems?.length ?? 0,
 					...(newItems?.map((item, i) => mapper.call(this, item, index + i, this)) ?? [])
@@ -308,9 +323,11 @@ arrayObservable.prototype.bindMap = function<T, U>(
 			}
 		}
 
-		if ("reversed" in change) mapped.reverse();
-		if ("sortFn" in change) mapped.sort(); // Mirror source ordering
-	});
+		if ("reversed" in change) target.reverse();
+		if ("sortFn" in change) target.sort(change.sortFn);
+	};
+
+	this.addEventListener("valuechanged", updateListener);
 
 	// Enforce immutability: throw on all mutation attempts
 	return new Proxy(mapped, {

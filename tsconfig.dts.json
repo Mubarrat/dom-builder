@@ -1,13 +1,13 @@
 {
 	"compilerOptions": {
-		"target": "ES2020",
+		"target": "ES2021",
 		"module": "none",
 		"outFile": "./dist/dom.js",
 		"declaration": true,
 		"declarationMap": true,
 		"strict": true,
 		"removeComments": false,
-		"lib": ["DOM", "ES2020"],
+		"lib": ["DOM", "ES2021"],
 		"forceConsistentCasingInFileNames": true,
     	"noImplicitAny": false,
 		"skipLibCheck": true

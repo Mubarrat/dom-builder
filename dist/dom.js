@@ -26,7 +26,12 @@ Object.setPrototypeOf(baseObservable, EventTarget);
 baseObservable.prototype.addEventListener = function (...args) { return this._eventTarget.addEventListener(...args); };
 baseObservable.prototype.removeEventListener = function (...args) { return this._eventTarget.removeEventListener(...args); };
 baseObservable.prototype.dispatchEvent = function (...args) { return this._eventTarget.dispatchEvent(...args); };
-baseObservable.prototype.type = "to";
+Object.defineProperty(baseObservable.prototype, 'type', {
+    value: 'to',
+    writable: false,
+    configurable: false,
+    enumerable: true
+});
 baseObservable.prototype.notifyBefore = function (change) {
     return this.dispatchEvent(new ValueChangeEvent("valuechanging", change, { cancelable: true }));
 };
@@ -67,14 +72,21 @@ Object.defineProperty(baseObservable.prototype, Symbol.toStringTag, {
 baseObservable.autoBind = (observable, set, observe) => {
     if (!(observable instanceof baseObservable)) {
         set(observable);
-        return;
+        return () => { };
     }
-    const evaluated = observable();
-    set(evaluated);
-    if (observable.type === "to" || observable.type === "two-way")
-        observable.addEventListener("valuechanged", () => set(observable()));
-    if (observable.type === "from" || observable.type === "two-way")
-        observe?.(evaluated);
+    set(observable());
+    const listener = () => set(observable());
+    if (observable.type === "to" || observable.type === "two-way") {
+        observable.addEventListener("valuechanged", listener);
+    }
+    if (observable.type === "from" || observable.type === "two-way") {
+        observe?.(observable());
+    }
+    return () => {
+        if (observable.type === "to" || observable.type === "two-way") {
+            observable.removeEventListener("valuechanged", listener);
+        }
+    };
 };
 const arrayObservable = function (initialValues) {
     const array = [...initialValues];
@@ -216,18 +228,25 @@ Object.setPrototypeOf(arrayObservable.prototype, baseObservable.prototype);
 Object.setPrototypeOf(arrayObservable, baseObservable);
 arrayObservable.prototype.bindMap = function (mapper) {
     const mapped = arrayObservable(this.map((item, i) => mapper.call(this, item, i, this)));
-    this.addEventListener("valuechanged", (change) => {
+    const weakMapped = new WeakRef(mapped);
+    const registry = new FinalizationRegistry(() => this.removeEventListener("valuechanged", updateListener));
+    registry.register(mapped, weakMapped);
+    const updateListener = (change) => {
+        const target = weakMapped.deref();
+        if (!target)
+            return;
         if ("index" in change) {
             const { index, newItems, oldItems } = change;
             if ((oldItems && oldItems.length) || (newItems && newItems.length)) {
-                mapped.splice(index, oldItems?.length ?? 0, ...(newItems?.map((item, i) => mapper.call(this, item, index + i, this)) ?? []));
+                target.splice(index, oldItems?.length ?? 0, ...(newItems?.map((item, i) => mapper.call(this, item, index + i, this)) ?? []));
             }
         }
         if ("reversed" in change)
-            mapped.reverse();
+            target.reverse();
         if ("sortFn" in change)
-            mapped.sort();
-    });
+            target.sort(change.sortFn);
+    };
+    this.addEventListener("valuechanged", updateListener);
     return new Proxy(mapped, {
         get(target, prop, receiver) {
             if (["push", "pop", "shift", "unshift", "splice", "reverse", "sort", "fill", "copyWithin"].includes(String(prop))) {
@@ -282,16 +301,32 @@ Object.defineProperty(arrayObservable.prototype, Symbol.toStringTag, {
     enumerable: false,
     configurable: false
 });
-Function.prototype.computed = function (...observables) {
-    const obs = baseObservable(this);
-    observables.forEach(observable => {
-        if (observable instanceof baseObservable) {
-            observable.addEventListener('valuechanged', obs.notify);
-        }
-    });
-    Object.setPrototypeOf(obs, Function.prototype.computed.prototype);
-    return obs;
-};
+{
+    const computedRegistry = new FinalizationRegistry(({ observers, listener }) => observers.forEach(obs => obs.removeEventListener("valuechanged", listener)));
+    Function.prototype.computed = function (...observables) {
+        const obs = baseObservable(this);
+        const weakObs = new WeakRef(obs);
+        const token = {};
+        const notifyListener = () => {
+            const strongObs = weakObs.deref();
+            if (strongObs) {
+                strongObs.notify();
+            }
+            else {
+                observables.forEach(o => o.removeEventListener("valuechanged", notifyListener));
+                computedRegistry.unregister(token);
+            }
+        };
+        observables.forEach(o => {
+            if (o instanceof baseObservable) {
+                o.addEventListener("valuechanged", notifyListener);
+            }
+        });
+        computedRegistry.register(obs, { observers: observables, listener: notifyListener }, token);
+        Object.setPrototypeOf(obs, Function.prototype.computed.prototype);
+        return obs;
+    };
+}
 Function.prototype.computed.prototype = Object.create(baseObservable.prototype);
 Function.prototype.computed.prototype.constructor = Function.prototype.computed;
 Object.setPrototypeOf(Function.prototype.computed, baseObservable);
@@ -334,162 +369,221 @@ function cstr(strings, ...values) {
 }
 Object.defineProperties(Document.prototype, {
     $dom: {
-        value(namespace) {
-            return new Proxy({}, {
-                get: (_, prop) => {
-                    if (typeof prop !== "string")
-                        return undefined;
-                    if (prop === "toString")
-                        return () => `DOM Proxy for namespace: ${namespace}`;
-                    const tagName = prop.replace(/([A-Z])/g, "-$1").toLowerCase();
-                    return (...args) => {
-                        const element = this.createElementNS(namespace, tagName);
-                        for (const arg of flattenIterable(args)) {
-                            if (arg === null || arg === undefined || arg === false)
-                                continue;
-                            if (arg.constructor === Object && arg[Symbol.iterator] === undefined && Symbol.asyncIterator && arg[Symbol.asyncIterator] === undefined) {
-                                for (const [attr, value] of Object.entries(arg)) {
-                                    if (attr === 'style') {
-                                        baseObservable.autoBind(value, v => typeof v === 'string'
-                                            ? element.setAttribute('style', v)
-                                            : Object.entries(v).forEach(([prop, value]) => baseObservable.autoBind(value, v => element.style[prop] = v, () => observeElementAttr(element, 'style', () => value(element.style[prop])))), v => observeElementAttr(element, 'style', () => value(typeof v === 'string'
-                                            ? element.getAttribute('style') || ''
-                                            : Object.assign({}, element.style))));
-                                    }
-                                    else if (attr === 'on' && typeof value === 'object' && value) {
-                                        for (const [eventName, handler] of Object.entries(value)) {
-                                            for (const event of flattenIterable([handler])) {
-                                                if (typeof event === 'function') {
-                                                    element.addEventListener(eventName.toLowerCase(), event);
+        get() {
+            return (namespace) => {
+                return new Proxy({}, {
+                    get: (_, prop) => {
+                        if (typeof prop !== "string")
+                            return undefined;
+                        if (prop === "toString")
+                            return () => `DOM Proxy for namespace: ${namespace}`;
+                        const tagName = prop.replace(/([A-Z])/g, "-$1").toLowerCase();
+                        return (...args) => {
+                            const element = this.createElementNS(namespace, tagName);
+                            for (const arg of flattenIterable(args)) {
+                                if (arg === null || arg === undefined || arg === false)
+                                    continue;
+                                if (arg.constructor === Object && arg[Symbol.iterator] === undefined && Symbol.asyncIterator && arg[Symbol.asyncIterator] === undefined) {
+                                    for (const [attr, value] of Object.entries(arg)) {
+                                        if (attr === 'style' && element instanceof HTMLElement) {
+                                            baseObservable.autoBind(value, v => typeof v === 'string'
+                                                ? element.setAttribute('style', v)
+                                                : Object.entries(v).forEach(([prop, value]) => baseObservable.autoBind(value, v => element.style[prop] = v, () => observeElementAttr(element, 'style', () => value(element.style[prop])))), v => observeElementAttr(element, 'style', () => value(typeof v === 'string'
+                                                ? element.getAttribute('style') || ''
+                                                : Object.assign({}, element.style))));
+                                        }
+                                        else if (attr === 'on' && typeof value === 'object' && value) {
+                                            for (const [eventName, handler] of Object.entries(value)) {
+                                                for (const event of flattenIterable([handler])) {
+                                                    if (typeof event === 'function') {
+                                                        element.addEventListener(eventName.toLowerCase(), event);
+                                                    }
                                                 }
                                             }
                                         }
-                                    }
-                                    else if (attr.startsWith('on')) {
-                                        for (const event of flattenIterable([value])) {
-                                            if (typeof event === 'function') {
-                                                element.addEventListener(attr.slice(2).toLowerCase(), event);
+                                        else if (attr.startsWith('on')) {
+                                            for (const event of flattenIterable([value])) {
+                                                if (typeof event === 'function') {
+                                                    element.addEventListener(attr.slice(2).toLowerCase(), event);
+                                                }
                                             }
                                         }
-                                    }
-                                    else if (attr === 'data' && typeof value === 'object') {
-                                        for (const [name, data] of Object.entries(value))
-                                            baseObservable.autoBind(data, v => element.dataset[name] = typeof v === 'object' ? JSON.stringify(v) : v, v => observeElementAttr(element, `data-${name}`, () => {
-                                                const newValue = element.dataset[name];
+                                        else if (attr === 'data' && typeof value === 'object' && (element instanceof HTMLElement || element instanceof SVGElement || element instanceof MathMLElement)) {
+                                            for (const [name, data] of Object.entries(value))
+                                                baseObservable.autoBind(data, v => element.dataset[name] = typeof v === 'object' ? JSON.stringify(v) : v, v => observeElementAttr(element, `data-${name.replace(/([A-Z])/g, "-$1").toLowerCase()}`, () => {
+                                                    const newValue = element.dataset[name];
+                                                    try {
+                                                        data(JSON.parse(newValue));
+                                                    }
+                                                    catch {
+                                                        data(newValue);
+                                                    }
+                                                }));
+                                        }
+                                        else if (attr === 'value' && (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) {
+                                            baseObservable.autoBind(value, v => element.value = v, () => element.addEventListener(element instanceof HTMLSelectElement ? 'change' : 'input', () => value(element.value)));
+                                        }
+                                        else if (attr === 'checked' && (element instanceof HTMLInputElement && (arg.type === 'checkbox' || arg.type === 'radio'))) {
+                                            baseObservable.autoBind(value, v => element.checked = v, () => element.addEventListener("change", () => value(element.checked)));
+                                        }
+                                        else if (value !== undefined) {
+                                            baseObservable.autoBind(value, v => attr in element
+                                                ? element[attr] = v
+                                                : element.setAttribute(attr, typeof v === 'object' ? JSON.stringify(v) : v), () => {
+                                                let newVal = attr in element ? element[attr] : element.getAttribute(attr);
                                                 try {
-                                                    data(JSON.parse(newValue));
+                                                    value(JSON.parse(newVal));
                                                 }
                                                 catch {
-                                                    data(newValue);
+                                                    value(newVal);
                                                 }
-                                            }));
-                                    }
-                                    else if (attr.toLowerCase().startsWith('ref')) {
-                                        for (const event of flattenIterable([value])) {
-                                            if (typeof event === 'function') {
-                                                event.bind(element, element);
-                                            }
+                                            });
                                         }
                                     }
-                                    else if (attr === 'value' && (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) {
-                                        baseObservable.autoBind(value, v => element.value = v, () => element.addEventListener(element instanceof HTMLSelectElement ? 'change' : 'input', () => value(element.value)));
-                                    }
-                                    else if (attr === 'checked' && (element instanceof HTMLInputElement && (element.type === 'checkbox' || element.type === 'radio'))) {
-                                        baseObservable.autoBind(value, v => element.checked = v, () => element.addEventListener("change", () => value(element.checked)));
-                                    }
-                                    else if (value !== undefined) {
-                                        baseObservable.autoBind(value, v => attr in element
-                                            ? element[attr] = v
-                                            : element.setAttribute(attr, typeof v === 'object' ? JSON.stringify(v) : v), () => {
-                                            let newVal = attr in element ? element[attr] : element.getAttribute(attr);
-                                            try {
-                                                value(JSON.parse(newVal));
-                                            }
-                                            catch {
-                                                value(newVal);
-                                            }
+                                }
+                                else if (arg instanceof baseObservable) {
+                                    if (arg instanceof arrayObservable) {
+                                        const anchor = new Text();
+                                        element.append(anchor);
+                                        const childAnchors = [];
+                                        function createNode(value) {
+                                            while (typeof value === 'function')
+                                                value = value.call(element, element);
+                                            return flattenRenderable(value).filter(node => node !== null && node !== undefined && node !== false);
+                                        }
+                                        arg().forEach((item, i) => {
+                                            const marker = new Text();
+                                            childAnchors[i] = marker;
+                                            anchor.before(marker, ...createNode(item));
                                         });
+                                        function update(change) {
+                                            if ("index" in change) {
+                                                const { index, oldItems, newItems } = change;
+                                                if (oldItems?.length) {
+                                                    for (let i = 0; i < oldItems.length; i++) {
+                                                        const marker = childAnchors[index];
+                                                        let next = marker.nextSibling;
+                                                        while (next && next !== childAnchors[index + 1]) {
+                                                            const toRemove = next;
+                                                            next = next.nextSibling;
+                                                            toRemove.remove();
+                                                        }
+                                                        marker.remove();
+                                                        childAnchors.splice(index, 1);
+                                                    }
+                                                }
+                                                if (newItems?.length) {
+                                                    for (let i = 0; i < newItems.length; i++) {
+                                                        const marker = new Text();
+                                                        const refNode = childAnchors[index] || anchor;
+                                                        refNode.before(marker, ...createNode(newItems[i]));
+                                                        childAnchors.splice(index + i, 0, marker);
+                                                    }
+                                                }
+                                            }
+                                            else if ("reversed" in change) {
+                                                const nodes = [];
+                                                for (let i = 0; i < childAnchors.length; i++) {
+                                                    const marker = childAnchors[i];
+                                                    let cursor = marker.nextSibling;
+                                                    const group = [marker];
+                                                    while (cursor && (i === childAnchors.length - 1 || cursor !== childAnchors[i + 1])) {
+                                                        group.push(cursor);
+                                                        cursor = cursor.nextSibling;
+                                                    }
+                                                    nodes.push(...group);
+                                                }
+                                                nodes.reverse().forEach(node => anchor.before(node));
+                                                childAnchors.reverse();
+                                            }
+                                            else if ("sortedIndices" in change) {
+                                                const mapping = change.sortedIndices;
+                                                const newOrder = [];
+                                                for (let i = 0; i < mapping.length; i++) {
+                                                    const marker = childAnchors[mapping[i]];
+                                                    let cursor = marker;
+                                                    const group = [];
+                                                    do {
+                                                        group.push(cursor);
+                                                        cursor = cursor.nextSibling;
+                                                    } while (cursor && mapping.includes(childAnchors.indexOf(cursor)) === false);
+                                                    newOrder.push(marker);
+                                                    group.forEach(n => anchor.before(n));
+                                                }
+                                                childAnchors.splice(0, childAnchors.length, ...newOrder);
+                                            }
+                                        }
+                                        arg.addEventListener("valuechanged", (e) => update(e));
+                                    }
+                                    else {
+                                        const anchor = new Text();
+                                        element.append(anchor);
+                                        let currentNodes = [];
+                                        function update() {
+                                            for (const node of currentNodes)
+                                                node.remove();
+                                            let projected = arg();
+                                            while (typeof projected === 'function')
+                                                projected = projected.call(element, element);
+                                            const fragment = new DocumentFragment();
+                                            fragment.append(...flattenRenderable(projected).filter(node => node !== null && node !== undefined && node !== false));
+                                            currentNodes = Array.from(fragment.children);
+                                            anchor.after(fragment);
+                                        }
+                                        ;
+                                        update();
+                                        arg.addEventListener('valuechanged', update);
                                     }
                                 }
-                            }
-                            else if (arg instanceof baseObservable) {
-                                if (arg instanceof arrayObservable) {
-                                    const anchor = new Text();
-                                    element.append(anchor);
-                                    function update() {
-                                        throw new Error("Implementation is in progress...");
-                                    }
-                                    update();
-                                    arg.addEventListener('valuechanged', update);
-                                }
-                                else {
-                                    const anchor = new Text();
-                                    element.append(anchor);
-                                    let currentNodes = [];
-                                    function update() {
-                                        for (const node of currentNodes)
-                                            node.remove();
-                                        let projected = arg();
-                                        while (typeof projected === 'function')
-                                            projected = projected.call(element, element);
-                                        const fragment = new DocumentFragment();
-                                        fragment.append(...flattenRenderable(projected).filter(node => node !== null && node !== undefined && node !== false));
-                                        currentNodes = Array.from(fragment.children);
-                                        anchor.after(fragment);
-                                    }
-                                    ;
-                                    update();
-                                    arg.addEventListener('valuechanged', update);
-                                }
-                            }
-                            else if (Symbol.asyncIterator) {
-                                (function render(arg, givenAnchor) {
-                                    for (const item of flattenRenderable(arg).filter(n => n != null && n !== false && n !== undefined)) {
-                                        if (typeof item[Symbol.asyncIterator] === 'function') {
-                                            const anchor = new Text();
-                                            if (givenAnchor) {
-                                                givenAnchor.before(anchor);
+                                else if (Symbol.asyncIterator) {
+                                    (function render(arg, givenAnchor) {
+                                        for (const item of flattenRenderable(arg).filter(n => n != null && n !== false && n !== undefined)) {
+                                            if (typeof item[Symbol.asyncIterator] === 'function') {
+                                                const anchor = new Text();
+                                                if (givenAnchor) {
+                                                    givenAnchor.before(anchor);
+                                                }
+                                                else {
+                                                    element.append(anchor);
+                                                }
+                                                (async () => { for await (const chunk of item)
+                                                    render(chunk, anchor); })();
+                                            }
+                                            else if (givenAnchor) {
+                                                givenAnchor.before(item);
                                             }
                                             else {
-                                                element.append(anchor);
+                                                element.append(item);
                                             }
-                                            (async () => { for await (const chunk of item)
-                                                render(chunk, anchor); })();
                                         }
-                                        else if (givenAnchor) {
-                                            givenAnchor.before(item);
-                                        }
-                                        else {
-                                            element.append(item);
-                                        }
-                                    }
-                                })(arg);
+                                    })(arg);
+                                }
+                                else {
+                                    element.append(...flattenRenderable(arg).filter(n => n != null && n !== false));
+                                }
                             }
-                            else {
-                                element.append(...flattenRenderable(arg).filter(n => n != null && n !== false));
+                            return element;
+                            function shouldBeIterated(x) {
+                                return (x != null &&
+                                    typeof x !== 'string' &&
+                                    typeof x !== 'function' &&
+                                    typeof x[Symbol.iterator] === 'function' &&
+                                    !(x instanceof Node) &&
+                                    !(x instanceof Date) &&
+                                    !(x instanceof RegExp));
                             }
-                        }
-                        return element;
-                        function shouldBeIterated(x) {
-                            return (x != null &&
-                                typeof x !== 'string' &&
-                                typeof x !== 'function' &&
-                                typeof x[Symbol.iterator] === 'function' &&
-                                !(x instanceof Node) &&
-                                !(x instanceof Date) &&
-                                !(x instanceof RegExp));
-                        }
-                        function flattenIterable(iterable) {
-                            return shouldBeIterated(iterable) ? Array.from(iterable).flatMap(flattenIterable) : [iterable];
-                        }
-                        function flattenRenderable(renderable) {
-                            while (typeof renderable === 'function')
-                                renderable = renderable.call(element, element);
-                            return shouldBeIterated(renderable) ? Array.from(renderable).flatMap(flattenRenderable) : [renderable];
-                        }
-                    };
-                }
-            });
+                            function flattenIterable(iterable) {
+                                return shouldBeIterated(iterable) ? Array.from(iterable).flatMap(flattenIterable) : [iterable];
+                            }
+                            function flattenRenderable(renderable) {
+                                while (typeof renderable === 'function')
+                                    renderable = renderable.call(element, element);
+                                return shouldBeIterated(renderable) ? Array.from(renderable).flatMap(flattenRenderable) : [renderable];
+                            }
+                        };
+                    }
+                });
+            };
         },
         configurable: false,
         enumerable: true
