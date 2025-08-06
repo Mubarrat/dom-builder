@@ -19,6 +19,8 @@ const baseObservable = function (baseFunction) {
     const callable = ((...args) => baseFunction(...args));
     Object.setPrototypeOf(callable, baseObservable.prototype);
     callable._eventTarget = new EventTarget();
+    callable.bind = Object.create(baseObservable.prototype.bind);
+    callable.bind.__observable__ = callable;
     return callable;
 };
 Object.setPrototypeOf(baseObservable.prototype, EventTarget.prototype);
@@ -26,11 +28,19 @@ Object.setPrototypeOf(baseObservable, EventTarget);
 baseObservable.prototype.addEventListener = function (...args) { return this._eventTarget.addEventListener(...args); };
 baseObservable.prototype.removeEventListener = function (...args) { return this._eventTarget.removeEventListener(...args); };
 baseObservable.prototype.dispatchEvent = function (...args) { return this._eventTarget.dispatchEvent(...args); };
-Object.defineProperty(baseObservable.prototype, 'type', {
-    value: 'to',
-    writable: false,
-    configurable: false,
-    enumerable: true
+Object.defineProperties(baseObservable.prototype, {
+    type: {
+        value: 'to',
+        writable: false,
+        configurable: false,
+        enumerable: true
+    },
+    [Symbol.toStringTag]: {
+        value: 'baseObservable',
+        writable: false,
+        configurable: false,
+        enumerable: false
+    }
 });
 baseObservable.prototype.notifyBefore = function (change) {
     return this.dispatchEvent(new ValueChangeEvent("valuechanging", change, { cancelable: true }));
@@ -44,9 +54,6 @@ baseObservable.prototype.tryChange = function (fn, change) {
     const result = fn();
     this.notify(change);
     return result;
-};
-baseObservable.prototype.bindSelect = function (selector) {
-    return (() => selector(this())).computed(this);
 };
 baseObservable.prototype.validatable = function (validator = () => true) {
     return Object.setPrototypeOf(Object.assign((...args) => this(...args), {
@@ -63,11 +70,22 @@ baseObservable.prototype.coercible = function (coerce = (x) => x) {
         return this(coerced);
     }, this);
 };
-Object.defineProperty(baseObservable.prototype, Symbol.toStringTag, {
-    value: 'baseObservable',
-    writable: false,
-    enumerable: false,
-    configurable: false
+baseObservable.prototype.bind = new Proxy({
+    __observable__: baseObservable.prototype,
+    select(selector) {
+        return (() => selector(this.__observable__())).computed(this.__observable__);
+    },
+}, {
+    get(target, p, receiver) {
+        if (p in target)
+            return Reflect.get(target, p, receiver);
+        const value = target.__observable__();
+        if (!(p in value))
+            return undefined;
+        if (typeof value[p] === 'function')
+            return (...args) => target.select((x) => x[p](...args));
+        return target.select((x) => x[p]);
+    }
 });
 baseObservable.autoBind = (observable, set, observe) => {
     if (!(observable instanceof baseObservable)) {
@@ -92,7 +110,7 @@ const arrayObservable = function (initialValues) {
     const array = [...initialValues];
     const obs = baseObservable(() => [...array]);
     Object.setPrototypeOf(obs, arrayObservable.prototype);
-    return new Proxy(obs, {
+    const proxy = new Proxy(obs, {
         get(target, prop, receiver) {
             switch (prop) {
                 case "push":
@@ -223,51 +241,12 @@ const arrayObservable = function (initialValues) {
             return Object.getOwnPropertyDescriptor(target, prop);
         },
     });
+    obs.bind = Object.create(arrayObservable.prototype.bind);
+    obs.bind.__observable__ = proxy;
+    return proxy;
 };
 Object.setPrototypeOf(arrayObservable.prototype, baseObservable.prototype);
 Object.setPrototypeOf(arrayObservable, baseObservable);
-arrayObservable.prototype.bindMap = function (mapper) {
-    const mapped = arrayObservable(this.map((item, i) => mapper.call(this, item, i, this)));
-    const weakMapped = new WeakRef(mapped);
-    const registry = new FinalizationRegistry(() => this.removeEventListener("valuechanged", updateListener));
-    registry.register(mapped, weakMapped);
-    const updateListener = (change) => {
-        const target = weakMapped.deref();
-        if (!target)
-            return;
-        if ("index" in change) {
-            const { index, newItems, oldItems } = change;
-            if ((oldItems && oldItems.length) || (newItems && newItems.length)) {
-                target.splice(index, oldItems?.length ?? 0, ...(newItems?.map((item, i) => mapper.call(this, item, index + i, this)) ?? []));
-            }
-        }
-        if ("reversed" in change)
-            target.reverse();
-        if ("sortFn" in change)
-            target.sort(change.sortFn);
-    };
-    this.addEventListener("valuechanged", updateListener);
-    return new Proxy(mapped, {
-        get(target, prop, receiver) {
-            if (["push", "pop", "shift", "unshift", "splice", "reverse", "sort", "fill", "copyWithin"].includes(String(prop))) {
-                return () => {
-                    throw new Error("Cannot modify a read-only mapped observable");
-                };
-            }
-            return Reflect.get(target, prop, receiver);
-        },
-        set(target, prop, value, receiver) {
-            if (typeof prop === "string") {
-                const n = Number(prop);
-                if (Number.isInteger(n) && n >= 0 && String(n) === prop)
-                    throw new Error("Cannot modify any item of a read-only mapped observable");
-            }
-            if (prop === "length")
-                throw new Error("Cannot modify length of a read-only mapped observable");
-            return Reflect.set(target, prop, value, receiver);
-        }
-    });
-};
 arrayObservable.prototype.optimistic = function (updater, promise) {
     const changes = [];
     const capture = (e) => changes.push(e);
@@ -301,6 +280,50 @@ Object.defineProperty(arrayObservable.prototype, Symbol.toStringTag, {
     enumerable: false,
     configurable: false
 });
+arrayObservable.prototype.bind = Object.create(baseObservable.prototype.bind);
+arrayObservable.prototype.bind.__observable__ = arrayObservable.prototype;
+arrayObservable.prototype.bind.map = function (mapper) {
+    const mapped = arrayObservable(this.__observable__.map((item, i) => mapper.call(this.__observable__, item, i, this.__observable__)));
+    const weakMapped = new WeakRef(mapped);
+    const registry = new FinalizationRegistry(() => this.__observable__.removeEventListener("valuechanged", updateListener));
+    registry.register(mapped, weakMapped);
+    const updateListener = (change) => {
+        const target = weakMapped.deref();
+        if (!target)
+            return;
+        if ("index" in change) {
+            const { index, newItems, oldItems } = change;
+            if ((oldItems && oldItems.length) || (newItems && newItems.length)) {
+                target.splice(index, oldItems?.length ?? 0, ...(newItems?.map((item, i) => mapper.call(this.__observable__, item, index + i, this.__observable__)) ?? []));
+            }
+        }
+        if ("reversed" in change)
+            target.reverse();
+        if ("sortFn" in change)
+            target.sort(change.sortFn);
+    };
+    this.__observable__.addEventListener("valuechanged", updateListener);
+    return new Proxy(mapped, {
+        get(target, prop, receiver) {
+            if (["push", "pop", "shift", "unshift", "splice", "reverse", "sort", "fill", "copyWithin"].includes(String(prop))) {
+                return () => {
+                    throw new Error("Cannot modify a read-only mapped observable");
+                };
+            }
+            return Reflect.get(target, prop, receiver);
+        },
+        set(target, prop, value, receiver) {
+            if (typeof prop === "string") {
+                const n = Number(prop);
+                if (Number.isInteger(n) && n >= 0 && String(n) === prop)
+                    throw new Error("Cannot modify any item of a read-only mapped observable");
+            }
+            if (prop === "length")
+                throw new Error("Cannot modify length of a read-only mapped observable");
+            return Reflect.set(target, prop, value, receiver);
+        }
+    });
+};
 {
     const computedRegistry = new FinalizationRegistry(({ observers, listener }) => observers.forEach(obs => obs.removeEventListener("valuechanged", listener)));
     Function.prototype.computed = function (...observables) {
@@ -641,7 +664,26 @@ const observable = function (initialValue) {
 };
 Object.setPrototypeOf(observable.prototype, baseObservable.prototype);
 Object.setPrototypeOf(observable, baseObservable);
-observable.prototype.type = "two-way";
+Object.defineProperties(observable.prototype, {
+    type: {
+        value: 'two-way',
+        writable: false,
+        configurable: false,
+        enumerable: true
+    },
+    value: {
+        get() { return this(); },
+        set(value) { return this(value); },
+        configurable: false,
+        enumerable: true
+    },
+    [Symbol.toStringTag]: {
+        value: 'observable',
+        writable: false,
+        configurable: false,
+        enumerable: false
+    }
+});
 observable.prototype.optimistic = function (updater, promise) {
     const snapshot = this();
     this(updater(snapshot));
@@ -650,10 +692,4 @@ observable.prototype.optimistic = function (updater, promise) {
         throw err;
     });
 };
-Object.defineProperty(observable.prototype, Symbol.toStringTag, {
-    value: 'observable',
-    writable: false,
-    enumerable: false,
-    configurable: false
-});
 //# sourceMappingURL=dom.js.map

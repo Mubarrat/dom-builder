@@ -66,6 +66,7 @@ interface observable<T = any> extends baseObservable<T> {
 	 * @returns Current/New value if new value was provided and change was allowed.
 	 */
 	(newValue?: T): T;
+	value: T;
 
 	/**
 	 * Applies an **optimistic update** strategy (immutable-only):
@@ -119,7 +120,26 @@ const observable = function<T>(initialValue?: T | undefined): observable<T> {
 
 Object.setPrototypeOf(observable.prototype, baseObservable.prototype);
 Object.setPrototypeOf(observable, baseObservable);
-observable.prototype.type = "two-way";
+Object.defineProperties(observable.prototype, {
+	type: {
+		value: 'two-way',
+		writable: false,
+		configurable: false,
+		enumerable: true
+	},
+	value: {
+		get<T>(this: observable<T>): T { return this(); },
+		set<T>(this: observable<T>, value: T): T { return this(value); },
+		configurable: false,
+		enumerable: true
+	},
+	[Symbol.toStringTag]: {
+		value: 'observable',
+		writable: false,
+		configurable: false,
+		enumerable: false
+	}
+});
 
 observable.prototype.optimistic = function<T, R>(updater: (current: T) => T, promise: Promise<R>): Promise<R> {
 	// Snapshot current value for rollback
@@ -134,10 +154,3 @@ observable.prototype.optimistic = function<T, R>(updater: (current: T) => T, pro
 		throw err;
 	});
 };
-
-Object.defineProperty(observable.prototype, Symbol.toStringTag, {
-	value: 'observable',
-	writable: false,
-	enumerable: false,
-	configurable: false
-});

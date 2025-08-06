@@ -49,7 +49,7 @@ class ValueChangeEvent<T extends object = object> extends Event {
 	 * Enables arbitrary property access to expose change data
 	 * (merged directly onto the event instance).
 	 */
-	[prop: string]: any;
+	[key: string]: any;
 
 	/**
 	 * Creates a new `ValueChangeEvent`.

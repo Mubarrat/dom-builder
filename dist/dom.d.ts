@@ -32,7 +32,7 @@ declare class ValueChangeEvent<T extends object = object> extends Event {
      * Enables arbitrary property access to expose change data
      * (merged directly onto the event instance).
      */
-    [prop: string]: any;
+    [key: string]: any;
     /**
      * Creates a new `ValueChangeEvent`.
      *
@@ -112,7 +112,7 @@ interface baseObservable<T = any> extends EventTarget {
      * @returns The original observable with an additional `isValid` property.
      */
     validatable(validator?: (val: T) => boolean): this & {
-        isValid: baseObservable<boolean>;
+        isValid: computed<boolean>;
     };
     /**
      * Applies coercion to incoming arguments before storage.
@@ -121,6 +121,47 @@ interface baseObservable<T = any> extends EventTarget {
      * @returns The same observable with coercion applied.
      */
     coercible(coerce?: (...args: any[]) => any): this;
+    /**
+     * Provides property and method-based projections of the observable's value.
+     *
+     * The `bind` property enables *derived binding*:
+     * - **Direct selection**: Use `bind.select()` to create a computed observable
+     *   based on a projection of the current value.
+     * - **Property bindings**: Access properties of the current value as
+     *   observables (e.g., `bind.someProperty`).
+     * - **Method bindings**: Call methods of the current value to get observables
+     *   representing the method's return value (e.g., `bind.someMethod(args)`).
+     *
+     * ### Example
+     * ```ts
+     * const person = baseObservable(() => ({ name: "Alice", age: 30 }));
+     *
+     * // Bind to a specific property
+     * const nameObs = person.bind.name; // baseObservable<string>
+     *
+     * // Bind to a computed projection
+     * const greetingObs = person.bind.select(p => `Hello, ${p.name}`);
+     *
+     * // Bind to a method of the underlying value
+     * const upperNameObs = person.bind.name.toUpperCase(); // baseObservable<string>
+     * ```
+     *
+     * @template T The underlying value type of the observable.
+     */
+    bind: {
+        [K in keyof T]: T[K] extends (...args: infer A) => infer R ? (...args: A) => computed<R> : computed<T[K]>;
+    } & {
+        /** Reference to the current observable instance backing this bind proxy. */
+        __observable__: baseObservable<T>;
+        /**
+         * Creates a derived observable by applying a selector function to the
+         * current value of the observable.
+         *
+         * @param selector Function mapping the current value to a derived value.
+         * @returns A new {@link baseObservable} representing the derived value.
+         */
+        select<U>(selector: (value: T) => U): computed<U>;
+    };
 }
 interface baseObservableConstructor {
     <T = any>(baseFunction: (...args: any[]) => T): baseObservable<T>;
@@ -236,8 +277,12 @@ interface arrayObservable<T = any> extends baseObservable<T[]>, Array<T> {
      * @returns The same `promise` for chaining, with rollback on rejection.
      */
     optimistic<R>(updater: (current: arrayObservable<T>) => void, promise: Promise<R>): Promise<R>;
+    bind: baseObservable<T[]>['bind'] & {
+        __observable__: arrayObservable<T>;
+        map<U>(mapper: (item: T, index: number, array: arrayObservable<T>) => U): arrayObservable<U>;
+    };
 }
-interface arrayObservableConstructor extends Omit<baseObservableConstructor, ''> {
+interface arrayObservableConstructor extends Omit<baseObservableConstructor, '' | 'prototype'> {
     <T>(initialValues: Iterable<T>): arrayObservable<T>;
     /**
      * Prototype object for all {@link arrayObservable} instances.
@@ -433,6 +478,7 @@ interface observable<T = any> extends baseObservable<T> {
      * @returns Current/New value if new value was provided and change was allowed.
      */
     (newValue?: T): T;
+    value: T;
     /**
      * Applies an **optimistic update** strategy (immutable-only):
      *

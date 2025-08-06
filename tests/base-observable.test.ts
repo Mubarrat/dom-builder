@@ -62,11 +62,11 @@ test.describe("baseObservable", () => {
         expect(result.notified).toBe(true);
     });
 
-    test("bindSelect creates derived observable", async ({ page }) => {
+    test("bind.select creates derived observable", async ({ page }) => {
         const result = await page.evaluate(() => {
             let value = 3;
             const obs = baseObservable(() => value);
-            const derived = obs.bindSelect(v => v * 2);
+            const derived = obs.bind.select(v => v * 2);
             return derived();
         });
         expect(result).toBe(6);
@@ -133,7 +133,9 @@ test.describe("baseObservable", () => {
         const result = await page.evaluate(() => {
             let value = 1;
             const obs = baseObservable(() => value);
-            obs.type = "from";
+            Object.defineProperty(obs, 'type', {
+                value: 'from'
+            });
             let observed;
             baseObservable.autoBind(obs, () => {}, v => observed = v);
             return observed;
@@ -208,11 +210,11 @@ test.describe("baseObservable", () => {
         expect(result.changed).toBe(true);
     });
 
-    test("bindSelect result is recomputed when source changes", async ({ page }) => {
+    test("bind.select result is recomputed when source changes", async ({ page }) => {
         const result = await page.evaluate(() => {
             let value = 10;
             const obs = baseObservable(() => value);
-            const derived = obs.bindSelect(v => v + 1);
+            const derived = obs.bind.select(v => v + 1);
             value = 20;
             obs.notify();
             return derived();

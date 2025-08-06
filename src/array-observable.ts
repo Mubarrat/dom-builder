@@ -114,9 +114,14 @@ interface arrayObservable<T = any> extends baseObservable<T[]>, Array<T> {
 	 * @returns The same `promise` for chaining, with rollback on rejection.
 	 */
 	optimistic<R>(updater: (current: arrayObservable<T>) => void, promise: Promise<R>): Promise<R>;
+
+	bind: baseObservable<T[]>['bind'] & {
+		__observable__: arrayObservable<T>;
+		map<U>(mapper: (item: T, index: number, array: arrayObservable<T>) => U): arrayObservable<U>;
+	}
 }
 
-interface arrayObservableConstructor extends Omit<baseObservableConstructor, ''> {
+interface arrayObservableConstructor extends Omit<baseObservableConstructor, '' | 'prototype'> {
 	<T>(initialValues: Iterable<T>): arrayObservable<T>;
 
 	/**
@@ -135,7 +140,7 @@ const arrayObservable = function<T>(initialValues: Iterable<T>): arrayObservable
 	Object.setPrototypeOf(obs, arrayObservable.prototype);
 
 	// Proxy traps allow indexed access and mutation interception
-	return new Proxy(obs, {
+	const proxy = new Proxy(obs, {
 		get(target, prop, receiver) {
 			switch (prop) {
 				case "push":
@@ -284,74 +289,15 @@ const arrayObservable = function<T>(initialValues: Iterable<T>): arrayObservable
 			return Object.getOwnPropertyDescriptor(target, prop);
 		},
 	});
+
+	obs.bind = Object.create(arrayObservable.prototype.bind);
+	obs.bind.__observable__ = proxy;
+
+	return proxy;
 } as arrayObservableConstructor;
 
 Object.setPrototypeOf(arrayObservable.prototype, baseObservable.prototype);
 Object.setPrototypeOf(arrayObservable, baseObservable);
-
-arrayObservable.prototype.bindMap = function<T, U>(
-	mapper: (item: T, index: number, array: arrayObservable<T>) => U
-): arrayObservable<U> {
-	// Initial mapping
-	const mapped = arrayObservable(this.map((item, i) => mapper.call(this, item, i, this)));
-
-	// Create WeakRef to mapped array
-	const weakMapped = new WeakRef(mapped);
-
-	// Register cleanup for mapped when GC’d
-	const registry = new FinalizationRegistry(() =>
-		// On mapped GC, unsubscribe automatically
-		this.removeEventListener("valuechanged", updateListener)
-	);
-
-	// Register the mapped observable for cleanup
-	registry.register(mapped, weakMapped);
-
-	// Listener to sync mapped array
-	const updateListener = (change: ValueChangeEvent<ArrayChange<T>>) => {
-		const target = weakMapped.deref();
-		if (!target) return; // GC’d
-
-		if ("index" in change) {
-			const { index, newItems, oldItems } = change;
-			if ((oldItems && oldItems.length) || (newItems && newItems.length)) {
-				target.splice(
-					index,
-					oldItems?.length ?? 0,
-					...(newItems?.map((item, i) => mapper.call(this, item, index + i, this)) ?? [])
-				);
-			}
-		}
-
-		if ("reversed" in change) target.reverse();
-		if ("sortFn" in change) target.sort(change.sortFn);
-	};
-
-	this.addEventListener("valuechanged", updateListener);
-
-	// Enforce immutability: throw on all mutation attempts
-	return new Proxy(mapped, {
-		get(target, prop, receiver) {
-			if (["push", "pop", "shift", "unshift", "splice", "reverse", "sort", "fill", "copyWithin"].includes(String(prop))) {
-				return () => {
-					throw new Error("Cannot modify a read-only mapped observable");
-				};
-			}
-			return Reflect.get(target, prop, receiver);
-		},
-		set(target, prop, value, receiver) {
-			if (typeof prop === "string") {
-				const n = Number(prop);
-				if (Number.isInteger(n) && n >= 0 && String(n) === prop)
-					throw new Error("Cannot modify any item of a read-only mapped observable");
-			}
-			if (prop === "length")
-				throw new Error("Cannot modify length of a read-only mapped observable");
-
-			return Reflect.set(target, prop, value, receiver);
-		}
-	}) as arrayObservable<U>;
-};
 
 arrayObservable.prototype.optimistic = function<T, R>(updater: (current: arrayObservable<T>) => void, promise: Promise<R>): Promise<R> {
 	// Collect all valuechanged events triggered by updater
@@ -396,3 +342,69 @@ Object.defineProperty(arrayObservable.prototype, Symbol.toStringTag, {
 	enumerable: false,
 	configurable: false
 });
+
+arrayObservable.prototype.bind = Object.create(baseObservable.prototype.bind);
+arrayObservable.prototype.bind.__observable__ = arrayObservable.prototype;
+arrayObservable.prototype.bind.map = function<T, U>(
+	mapper: (item: T, index: number, array: arrayObservable<T>) => U
+): arrayObservable<U> {
+	// Initial mapping
+	const mapped = arrayObservable(this.__observable__.map((item, i) => mapper.call(this.__observable__, item, i, this.__observable__)));
+
+	// Create WeakRef to mapped array
+	const weakMapped = new WeakRef(mapped);
+
+	// Register cleanup for mapped when GC’d
+	const registry = new FinalizationRegistry(() =>
+		// On mapped GC, unsubscribe automatically
+		this.__observable__.removeEventListener("valuechanged", updateListener)
+	);
+
+	// Register the mapped observable for cleanup
+	registry.register(mapped, weakMapped);
+
+	// Listener to sync mapped array
+	const updateListener = (change: ValueChangeEvent<ArrayChange<T>>) => {
+		const target = weakMapped.deref();
+		if (!target) return; // GC’d
+
+		if ("index" in change) {
+			const { index, newItems, oldItems } = change;
+			if ((oldItems && oldItems.length) || (newItems && newItems.length)) {
+				target.splice(
+					index,
+					oldItems?.length ?? 0,
+					...(newItems?.map((item, i) => mapper.call(this.__observable__, item, index + i, this.__observable__)) ?? [])
+				);
+			}
+		}
+
+		if ("reversed" in change) target.reverse();
+		if ("sortFn" in change) target.sort(change.sortFn);
+	};
+
+	this.__observable__.addEventListener("valuechanged", updateListener);
+
+	// Enforce immutability: throw on all mutation attempts
+	return new Proxy(mapped, {
+		get(target, prop, receiver) {
+			if (["push", "pop", "shift", "unshift", "splice", "reverse", "sort", "fill", "copyWithin"].includes(String(prop))) {
+				return () => {
+					throw new Error("Cannot modify a read-only mapped observable");
+				};
+			}
+			return Reflect.get(target, prop, receiver);
+		},
+		set(target, prop, value, receiver) {
+			if (typeof prop === "string") {
+				const n = Number(prop);
+				if (Number.isInteger(n) && n >= 0 && String(n) === prop)
+					throw new Error("Cannot modify any item of a read-only mapped observable");
+			}
+			if (prop === "length")
+				throw new Error("Cannot modify length of a read-only mapped observable");
+
+			return Reflect.set(target, prop, value, receiver);
+		}
+	}) as arrayObservable<U>;
+};

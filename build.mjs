@@ -1,7 +1,7 @@
 import { writeFileSync, readFileSync } from 'fs';
 import { join, basename } from 'path';
 import { minify } from 'terser';
-import pkg from './package.json' assert { type: 'json' };
+import pkg from './package.json' with { type: 'json' };
 
 const distDir = './dist';
 const outputFile = join(distDir, 'dom.js');

@@ -1,0 +1,15 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+            "type": "npm",
+            "script": "build", // Corresponds to the "build" script in your package.json
+            "group": {
+                "kind": "build",
+                "isDefault": true // Set as default build task for Ctrl+Shift+B
+            },
+            "label": "npm: build",
+            "detail": "Runs the 'build' script defined in package.json"
+		}
+	]
+}

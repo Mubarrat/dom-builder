@@ -99,7 +99,7 @@ interface baseObservable<T = any> extends EventTarget {
 	 * @returns The original observable with an additional `isValid` property.
 	 */
 	validatable(validator?: (val: T) => boolean): this & {
-		isValid: baseObservable<boolean>;
+		isValid: computed<boolean>;
 	};
 
 	/**
@@ -109,6 +109,56 @@ interface baseObservable<T = any> extends EventTarget {
 	 * @returns The same observable with coercion applied.
 	 */
 	coercible(coerce?: (...args: any[]) => any): this;
+
+	/**
+	 * Provides property and method-based projections of the observable's value.
+	 *
+	 * The `bind` property enables *derived binding*:
+	 * - **Direct selection**: Use `bind.select()` to create a computed observable
+	 *   based on a projection of the current value.
+	 * - **Property bindings**: Access properties of the current value as
+	 *   observables (e.g., `bind.someProperty`).
+	 * - **Method bindings**: Call methods of the current value to get observables
+	 *   representing the method's return value (e.g., `bind.someMethod(args)`).
+	 *
+	 * ### Example
+	 * ```ts
+	 * const person = baseObservable(() => ({ name: "Alice", age: 30 }));
+	 *
+	 * // Bind to a specific property
+	 * const nameObs = person.bind.name; // baseObservable<string>
+	 *
+	 * // Bind to a computed projection
+	 * const greetingObs = person.bind.select(p => `Hello, ${p.name}`);
+	 *
+	 * // Bind to a method of the underlying value
+	 * const upperNameObs = person.bind.name.toUpperCase(); // baseObservable<string>
+	 * ```
+	 *
+	 * @template T The underlying value type of the observable.
+	 */
+	bind: {
+		/**
+		 * Automatically projects properties and methods of the current value into
+		 * observables:
+		 * - Properties become `baseObservable<PropertyType>`.
+		 * - Methods become functions returning `baseObservable<ReturnType>`.
+		 */
+		[K in keyof T]: T[K] extends (...args: infer A) => infer R
+			? (...args: A) => computed<R> : computed<T[K]>;
+	} & {
+		/** Reference to the current observable instance backing this bind proxy. */
+		__observable__: baseObservable<T>;
+
+		/**
+		 * Creates a derived observable by applying a selector function to the
+		 * current value of the observable.
+		 *
+		 * @param selector Function mapping the current value to a derived value.
+		 * @returns A new {@link baseObservable} representing the derived value.
+		 */
+		select<U>(selector: (value: T) => U): computed<U>;
+	};
 }
 
 interface baseObservableConstructor {
@@ -148,6 +198,9 @@ const baseObservable = function<T = any>(baseFunction: (...args: any[]) => T): b
 	// Create EventTarget property to enable event dispatch/listening
 	callable._eventTarget = new EventTarget();
 
+	callable.bind = Object.create(baseObservable.prototype.bind);
+	callable.bind.__observable__ = callable;
+
 	return callable;
 } as baseObservableConstructor;
 
@@ -161,12 +214,20 @@ baseObservable.prototype.addEventListener = function(...args) { return this._eve
 baseObservable.prototype.removeEventListener = function(...args) { return this._eventTarget.removeEventListener(...args) };
 baseObservable.prototype.dispatchEvent = function(...args) { return this._eventTarget.dispatchEvent(...args) };
 
-// Default binding mode is "to" (ViewModel → UI)
-Object.defineProperty(baseObservable.prototype, 'type', {
-	value: 'to',
-	writable: false,
-	configurable: false,
-	enumerable: true
+Object.defineProperties(baseObservable.prototype, {
+	// Default binding mode is "to" (ViewModel → UI)
+	type: {
+		value: 'to',
+		writable: false,
+		configurable: false,
+		enumerable: true
+	},
+	[Symbol.toStringTag]: {
+		value: 'baseObservable',
+		writable: false,
+		configurable: false,
+		enumerable: false
+	}
 });
 
 baseObservable.prototype.notifyBefore = function (change) {
@@ -190,11 +251,6 @@ baseObservable.prototype.tryChange = function<TResult>(fn: () => TResult, change
 	return result;
 };
 
-baseObservable.prototype.bindSelect = function (selector: (val) => any) {
-	// Creates a derived observable that recomputes via selector whenever source changes
-	return (() => selector(this())).computed(this);
-};
-
 baseObservable.prototype.validatable = function (validator: (val) => boolean = () => true) {
 	// Compose an observable with an additional `isValid` observable derived from the validator
 	return Object.setPrototypeOf(
@@ -215,12 +271,23 @@ baseObservable.prototype.coercible = function (coerce: (...args) => any = (x) =>
 	}, this);
 };
 
-Object.defineProperty(baseObservable.prototype, Symbol.toStringTag, {
-	value: 'baseObservable',
-	writable: false,
-	enumerable: false,
-	configurable: false
-});
+baseObservable.prototype.bind = new Proxy({
+	__observable__: baseObservable.prototype,
+	select<T, U>(selector: (value: T) => U): baseObservable<U> {
+		return (() => selector(this.__observable__())).computed(this.__observable__)
+	},
+}, {
+	get(target, p, receiver) {
+		if (p in target)
+			return Reflect.get(target, p, receiver);
+		const value = target.__observable__();
+		if (!(p in value))
+			return undefined;
+		if (typeof value[p] === 'function')
+			return (...args) => target.select((x: any) => x[p](...args));
+		return target.select((x: any) => x[p]);
+	}
+}) as baseObservable['bind'];
 
 baseObservable.autoBind = <T>(observable: baseObservable<T> | T, set: (val: T) => void, observe?: (val: T) => void) => {
 	// Plain value: just set it

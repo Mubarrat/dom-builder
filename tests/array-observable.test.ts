@@ -126,29 +126,29 @@ test.describe("arrayObservable", () => {
         expect(result).toBe(true);
     });
 
-    test("bindMap creates mapped observable", async ({ page }) => {
+    test("bind.map creates mapped observable", async ({ page }) => {
         const result = await page.evaluate(() => {
             const arr = arrayObservable([1, 2, 3]);
-            const mapped = arr.bindMap(x => x * 2);
+            const mapped = arr.bind.map(x => x * 2);
             return mapped[0] === 2 && mapped[2] === 6;
         });
         expect(result).toBe(true);
     });
 
-    test("bindMap mapped observable updates on source change", async ({ page }) => {
+    test("bind.map mapped observable updates on source change", async ({ page }) => {
         const result = await page.evaluate(() => {
             const arr = arrayObservable([1, 2]);
-            const mapped = arr.bindMap(x => x + 1);
+            const mapped = arr.bind.map(x => x + 1);
             arr.push(3);
             return mapped[2] === 4;
         });
         expect(result).toBe(true);
     });
 
-    test("bindMap mapped observable is read-only", async ({ page }) => {
+    test("bind.map mapped observable is read-only", async ({ page }) => {
         const result = await page.evaluate(() => {
             const arr = arrayObservable([1, 2]);
-            const mapped = arr.bindMap(x => x * 2);
+            const mapped = arr.bind.map(x => x * 2);
             try {
                 mapped.push(5);
                 return false;
