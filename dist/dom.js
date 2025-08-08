@@ -1,5 +1,5 @@
 /*!
- * Dom-Builder JavaScript Library v4.0.0
+ * Dom-Builder JavaScript Library v4.0.1
  * https://github.com/Mubarrat/dom-builder/
  * 
  * Released under the MIT license
@@ -84,12 +84,12 @@ baseObservable.prototype.bind = new Proxy({
     get(target, p, receiver) {
         if (p in target)
             return Reflect.get(target, p, receiver);
-        const value = target.__observable__();
+        const value = receiver.__observable__();
         if (!(p in value))
             return undefined;
         if (typeof value[p] === 'function')
-            return (...args) => target.select((x) => x[p](...args));
-        return target.select((x) => x[p]);
+            return (...args) => receiver.select((x) => x[p](...args));
+        return receiver.select((x) => x[p]);
     }
 });
 baseObservable.autoBind = (observable, set, observe) => {
@@ -112,7 +112,11 @@ baseObservable.autoBind = (observable, set, observe) => {
     };
 };
 const arrayObservable = function (initialValues) {
-    const array = typeof initialValues === 'number' ? new Array(initialValues).fill(undefined) : Array.from(initialValues);
+    const array = !initialValues
+        ? []
+        : typeof initialValues === 'number'
+            ? new Array(initialValues).fill(undefined)
+            : Array.from(initialValues);
     const obs = baseObservable(() => [...array]);
     Object.setPrototypeOf(obs, arrayObservable.prototype);
     const proxy = new Proxy(obs, {
@@ -215,16 +219,7 @@ const arrayObservable = function (initialValues) {
             }
             return Reflect.set(target, prop, value, receiver);
         },
-        has(target, prop) {
-            if (prop === "length")
-                return true;
-            if (typeof prop === "string") {
-                const n = Number(prop);
-                if (Number.isInteger(n) && n >= 0 && String(n) === prop)
-                    return n < array.length;
-            }
-            return prop in target;
-        },
+        has: (target, prop) => prop in target || prop in array,
         deleteProperty(target, prop) {
             if (typeof prop === "string") {
                 const n = Number(prop);
@@ -237,7 +232,7 @@ const arrayObservable = function (initialValues) {
             }
             return Reflect.deleteProperty(target, prop);
         },
-        ownKeys: target => Array.from({ length: array.length }, (_, i) => i.toString()).concat(Object.getOwnPropertyNames(target)),
+        ownKeys: target => [...new Set([...Object.keys(target), ...Object.keys(array)])],
         getOwnPropertyDescriptor(target, prop) {
             if (typeof prop === "string") {
                 const n = Number(prop);

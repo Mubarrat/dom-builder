@@ -1,6 +1,6 @@
 {
   "name": "@mubarrat/dom-builder",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "description": "A lightweight DOM builder library that creates HTML, SVG, and MathML elements using function calls. Supports attributes, event listeners, reactive updates, and nested child elements for declarative UI construction.",
   "scripts": {
     "build": "tsc -p tsconfig.dts.json && tsc && node build.mjs",
@@ -23,7 +23,8 @@
     "@types/node": "^24.1.0",
     "playwright": "^1.54.1",
     "terser": "^5.43.1",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "source-map": "^0.7.6"
   },
   "publishConfig": {
     "@mubarrat:registry": "https://npm.pkg.github.com/"

@@ -289,7 +289,11 @@ interface arrayObservableConstructor extends Omit<baseObservableConstructor, ''>
  */
 const arrayObservable = function<T>(initialValues: Iterable<T> | ArrayLike<T> | number): arrayObservable<T> {
 	// Internal backing storage (never directly exposed to users)
-	const array: T[] = typeof initialValues === 'number' ? new Array(initialValues).fill(undefined) : Array.from(initialValues);
+	const array: T[] = !initialValues
+		? []
+		: typeof initialValues === 'number'
+			? new Array(initialValues).fill(undefined)
+			: Array.from(initialValues);
 
 	// Base observable for broadcasting value changes
 	const obs = baseObservable(() => [...array]) as arrayObservable<T>;
@@ -413,15 +417,7 @@ const arrayObservable = function<T>(initialValues: Iterable<T> | ArrayLike<T> | 
 			return Reflect.set(target, prop, value, receiver);
 		},
 
-		has(target, prop) {
-			if (prop === "length") return true;
-			if (typeof prop === "string") {
-				const n = Number(prop);
-				if (Number.isInteger(n) && n >= 0 && String(n) === prop)
-					return n < array.length;
-			}
-			return prop in target;
-		},
+		has: (target, prop) => prop in target || prop in array,
 
 		deleteProperty(target, prop) {
 			if (typeof prop === "string") {
@@ -436,8 +432,7 @@ const arrayObservable = function<T>(initialValues: Iterable<T> | ArrayLike<T> | 
 			return Reflect.deleteProperty(target, prop);
 		},
 
-		ownKeys: target =>
-			Array.from({ length: array.length }, (_, i) => i.toString()).concat(Object.getOwnPropertyNames(target)),
+		ownKeys: target => [...new Set([...Object.keys(target), ...Object.keys(array)])],
 
 		getOwnPropertyDescriptor(target, prop) {
 			if (typeof prop === "string") {

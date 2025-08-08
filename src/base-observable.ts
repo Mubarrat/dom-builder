@@ -392,12 +392,12 @@ baseObservable.prototype.bind = new Proxy({
 	get(target, p, receiver) {
 		if (p in target)
 			return Reflect.get(target, p, receiver);
-		const value = target.__observable__();
+		const value = receiver.__observable__();
 		if (!(p in value))
 			return undefined;
 		if (typeof value[p] === 'function')
-			return (...args) => target.select((x: any) => x[p](...args));
-		return target.select((x: any) => x[p]);
+			return (...args) => receiver.select((x: any) => x[p](...args));
+		return receiver.select((x: any) => x[p]);
 	}
 }) as baseObservable['bind'];
 

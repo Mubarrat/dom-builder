@@ -1,5 +1,5 @@
 /*!
- * Dom-Builder JavaScript Library v4.0.0
+ * Dom-Builder JavaScript Library v4.0.1
  * https://github.com/Mubarrat/dom-builder/
  * 
  * Released under the MIT license
