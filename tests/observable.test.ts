@@ -49,7 +49,7 @@ test.describe("observable", () => {
 	test("bindTo has type 'to'", async ({ page }) => {
 		const result = await page.evaluate(() => {
 			const obs = observable("x");
-			return obs.bindTo.type;
+			return obs.bind.to.type;
 		});
 		expect(result).toBe("to");
 	});
@@ -57,7 +57,7 @@ test.describe("observable", () => {
 	test("bindFrom has type 'from'", async ({ page }) => {
 		const result = await page.evaluate(() => {
 			const obs = observable("x");
-			return obs.bindFrom.type;
+			return obs.bind.from.type;
 		});
 		expect(result).toBe("from");
 	});
@@ -65,9 +65,9 @@ test.describe("observable", () => {
 	test("bindTo and bindFrom share value with original", async ({ page }) => {
 		const result = await page.evaluate(() => {
 			const obs = observable("a");
-			obs.bindTo("b");
+			obs.bind.to("b");
 			const afterBindTo = obs();
-			obs.bindFrom("c");
+			obs.bind.from("c");
 			const afterBindFrom = obs();
 			return { afterBindTo, afterBindFrom };
 		});
@@ -202,8 +202,8 @@ test.describe("observable", () => {
     test("bindTo and bindFrom are callable and return correct value", async ({ page }) => {
         const result = await page.evaluate(() => {
             const obs = observable("foo");
-            const to = obs.bindTo;
-            const from = obs.bindFrom;
+            const to = obs.bind.to;
+            const from = obs.bind.from;
             to("bar");
             from("baz");
             return [obs(), to(), from()];
