@@ -227,10 +227,18 @@ Object.defineProperties(Document.prototype, {
 												() => element.addEventListener("change", () => value(element.checked))
 											);
 										} else if (value !== undefined) {
-											baseObservable.autoBind(value,
-												v => attr in element
-														? element[attr] = v
-														: element.setAttribute(attr, typeof v === 'object' ? JSON.stringify(v) : v),
+											baseObservable.autoBind(
+												value,
+												v => {
+													if (attr in element) {
+														try {
+															element[attr] = v;
+															return;
+														} catch {}
+													}
+													// Fallback if property doesn't exist or is readonly.
+													element.setAttribute(attr, typeof v === 'object' ? JSON.stringify(v) : v);
+												},
 												() => {
 													let newVal = attr in element ? element[attr] : element.getAttribute(attr);
 													try {
@@ -246,103 +254,86 @@ Object.defineProperties(Document.prototype, {
 									if (arg instanceof arrayObservable) {
 										const anchor = new Text();
 										element.append(anchor);
-
-										// Track anchors for each array element
 										const childAnchors: Text[] = [];
 
-										function createNode(value: any): Node[] {
-											// Project value like in normal observable
+										const createNode = (value: any): ChildNode[] => {
 											while (typeof value === 'function') value = value.call(element, element);
-											return flattenRenderable(value).filter(node => node !== null && node !== undefined && node !== false);
-										}
+											return flattenRenderable(value).filter(n => n != null && n !== false) as ChildNode[];
+										};
 
 										// Initial render
 										arg().forEach((item, i) => {
 											const marker = new Text();
-											childAnchors[i] = marker;
+											childAnchors.push(marker);
 											anchor.before(marker, ...createNode(item));
 										});
 
+										// Helper: snapshot each [marker, ...nodesUntilNextMarker]
+										const snapshotGroups = () => childAnchors.map((marker, i) => {
+											const end = childAnchors[i + 1] || anchor;
+											const nodes: ChildNode[] = [];
+											for (let n: ChildNode = marker; n && n !== end; n = n.nextSibling!) nodes.push(n);
+											return nodes;
+										});
+
+										// Helper: reorder groups based on mapping
+										const reorder = (mapping: number[]) => {
+											const groups = snapshotGroups();
+											for (let idx of mapping) for (let node of groups[idx]) anchor.before(node);
+											childAnchors.splice(0, childAnchors.length, ...mapping.map(i => childAnchors[i]));
+										};
+
 										function update(change: ArrayChange<any>) {
 											if ("index" in change) {
-												// Handle splice/insert/remove
 												const { index, oldItems, newItems } = change;
 
-												// Remove old nodes
+												// Remove old
 												if (oldItems?.length) {
-													for (let i = 0; i < oldItems.length; i++) {
-														const marker = childAnchors[index];
-														let next = marker.nextSibling;
-														while (next && next !== childAnchors[index + 1]) {
-															const toRemove = next;
-															next = next.nextSibling;
-															toRemove.remove();
-														}
-														marker.remove();
-														childAnchors.splice(index, 1);
+													const startMarker = childAnchors[index];
+													const endMarker = childAnchors[index + oldItems.length] || anchor;
+													let node: ChildNode = startMarker;
+													while (node && node !== endMarker) {
+														const next = node.nextSibling!;
+														node.remove();
+														node = next;
 													}
+													childAnchors.splice(index, oldItems.length);
 												}
 
-												// Insert new nodes
+												// Insert new
 												if (newItems?.length) {
-													for (let i = 0; i < newItems.length; i++) {
+													const markers: Text[] = [];
+													const nodes: Node[] = [];
+													for (let item of newItems) {
 														const marker = new Text();
-														const refNode = childAnchors[index] || anchor;
-														refNode.before(marker, ...createNode(newItems[i]));
-														childAnchors.splice(index + i, 0, marker);
+														markers.push(marker);
+														nodes.push(marker, ...createNode(item));
 													}
+													(childAnchors[index] || anchor).before(...nodes);
+													childAnchors.splice(index, 0, ...markers);
 												}
-											}
-											else if ("reversed" in change) {
-												// Reverse DOM order
-												const nodes: Node[] = [];
-												for (let i = 0; i < childAnchors.length; i++) {
-													const marker = childAnchors[i];
-													let cursor = marker.nextSibling;
-													const group: Node[] = [marker];
-													while (cursor && (i === childAnchors.length - 1 || cursor !== childAnchors[i + 1])) {
-														group.push(cursor);
-														cursor = cursor.nextSibling;
-													}
-													nodes.push(...group);
-												}
-												nodes.reverse().forEach(node => anchor.before(node));
-												childAnchors.reverse();
-											}
-											else if ("sortedIndices" in change) {
-												// Reorder based on sortedIndices
-												const mapping = change.sortedIndices;
-												const newOrder: Text[] = [];
-												for (let i = 0; i < mapping.length; i++) {
-													const marker = childAnchors[mapping[i]];
-													let cursor = marker;
-													const group: Node[] = [];
-													do {
-														group.push(cursor);
-														cursor = cursor.nextSibling as Text;
-													} while (cursor && mapping.includes(childAnchors.indexOf(cursor as Text)) === false);
-													newOrder.push(marker);
-													group.forEach(n => anchor.before(n));
-												}
-												childAnchors.splice(0, childAnchors.length, ...newOrder);
+											} else if ("reversed" in change) {
+												reorder([...childAnchors.keys()].reverse());
+											} else if ("sortedIndices" in change) {
+												reorder(change.sortedIndices);
 											}
 										}
-
-										// Apply incremental updates
+										
 										arg.addEventListener("valuechanged", (e: ValueChangeEvent<ArrayChange<any>>) =>
-											update(e as Extract<ValueChangeEvent<ArrayChange<any>>, ArrayChange<any>>));
+											update(e as Extract<ValueChangeEvent<ArrayChange<any>>, ArrayChange<any>>)
+										);
 									} else {
 										// Observable content: replace children when observable changes
 										const anchor = new Text();
 										element.append(anchor);
-										let currentNodes: (Element | CharacterData)[] = [];
+										let currentNodes: ChildNode[] = [];
 										function update() {
 											for (const node of currentNodes) node.remove();
 											let projected = arg();
 											while (typeof projected === 'function') projected = projected.call(element, element);
 											const fragment = new DocumentFragment();
 											fragment.append(...flattenRenderable(projected).filter(node => node !== null && node !== undefined && node !== false));
-											currentNodes = Array.from(fragment.children);
+											currentNodes = Array.from(fragment.childNodes);
 											anchor.after(fragment);
 										};
 										update();

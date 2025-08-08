@@ -107,7 +107,7 @@ baseObservable.autoBind = (observable, set, observe) => {
     };
 };
 const arrayObservable = function (initialValues) {
-    const array = [...initialValues];
+    const array = typeof initialValues === 'number' ? new Array(initialValues).fill(undefined) : Array.from(initialValues);
     const obs = baseObservable(() => [...array]);
     Object.setPrototypeOf(obs, arrayObservable.prototype);
     const proxy = new Proxy(obs, {
@@ -150,9 +150,12 @@ const arrayObservable = function (initialValues) {
                     return (compareFn) => {
                         if (!target.notifyBefore({ sortFn: compareFn || null }))
                             return receiver;
-                        const oldArray = [...array];
-                        array.sort(compareFn);
-                        const sortedIndices = oldArray.map(item => array.indexOf(item));
+                        const indexed = array.map((v, i) => ({ v, i }));
+                        indexed.sort((a, b) => (compareFn ? compareFn(a.v, b.v) : (a.v > b.v ? 1 : a.v < b.v ? -1 : 0)));
+                        for (let i = 0; i < array.length; i++) {
+                            array[i] = indexed[i].v;
+                        }
+                        const sortedIndices = indexed.map(pair => pair.i);
                         target.notify({ sortedIndices });
                         return receiver;
                     };
@@ -217,6 +220,18 @@ const arrayObservable = function (initialValues) {
             }
             return prop in target;
         },
+        deleteProperty(target, prop) {
+            if (typeof prop === "string") {
+                const n = Number(prop);
+                if (Number.isInteger(n) && n >= 0 && String(n) === prop) {
+                    return target.tryChange(() => {
+                        array[n] = undefined;
+                        return true;
+                    }, { index: n, oldItems: [array[n]], newItems: [undefined] }) ?? false;
+                }
+            }
+            return Reflect.deleteProperty(target, prop);
+        },
         ownKeys: target => Array.from({ length: array.length }, (_, i) => i.toString()).concat(Object.getOwnPropertyNames(target)),
         getOwnPropertyDescriptor(target, prop) {
             if (typeof prop === "string") {
@@ -247,6 +262,19 @@ const arrayObservable = function (initialValues) {
 };
 Object.setPrototypeOf(arrayObservable.prototype, baseObservable.prototype);
 Object.setPrototypeOf(arrayObservable, baseObservable);
+Object.defineProperties(arrayObservable.prototype, {
+    [Symbol.species]: {
+        get() { return arrayObservable; },
+        enumerable: false,
+        configurable: false
+    },
+    [Symbol.toStringTag]: {
+        value: 'arrayObservable',
+        writable: false,
+        enumerable: false,
+        configurable: false
+    }
+});
 arrayObservable.prototype.optimistic = function (updater, promise) {
     const changes = [];
     const capture = (e) => changes.push(e);
@@ -274,12 +302,6 @@ arrayObservable.prototype.optimistic = function (updater, promise) {
         throw err;
     });
 };
-Object.defineProperty(arrayObservable.prototype, Symbol.toStringTag, {
-    value: 'arrayObservable',
-    writable: false,
-    enumerable: false,
-    configurable: false
-});
 arrayObservable.prototype.bind = Object.create(baseObservable.prototype.bind);
 arrayObservable.prototype.bind.__observable__ = arrayObservable.prototype;
 arrayObservable.prototype.bind.map = function (mapper) {
@@ -350,8 +372,7 @@ arrayObservable.prototype.bind.map = function (mapper) {
         return obs;
     };
 }
-Function.prototype.computed.prototype = Object.create(baseObservable.prototype);
-Function.prototype.computed.prototype.constructor = Function.prototype.computed;
+Object.setPrototypeOf(Function.prototype.computed.prototype, baseObservable.prototype);
 Object.setPrototypeOf(Function.prototype.computed, baseObservable);
 Object.defineProperty(Function.prototype.computed.prototype, Symbol.toStringTag, {
     value: 'computed',
@@ -450,9 +471,16 @@ Object.defineProperties(Document.prototype, {
                                             baseObservable.autoBind(value, v => element.checked = v, () => element.addEventListener("change", () => value(element.checked)));
                                         }
                                         else if (value !== undefined) {
-                                            baseObservable.autoBind(value, v => attr in element
-                                                ? element[attr] = v
-                                                : element.setAttribute(attr, typeof v === 'object' ? JSON.stringify(v) : v), () => {
+                                            baseObservable.autoBind(value, v => {
+                                                if (attr in element) {
+                                                    try {
+                                                        element[attr] = v;
+                                                        return;
+                                                    }
+                                                    catch { }
+                                                }
+                                                element.setAttribute(attr, typeof v === 'object' ? JSON.stringify(v) : v);
+                                            }, () => {
                                                 let newVal = attr in element ? element[attr] : element.getAttribute(attr);
                                                 try {
                                                     value(JSON.parse(newVal));
@@ -469,71 +497,61 @@ Object.defineProperties(Document.prototype, {
                                         const anchor = new Text();
                                         element.append(anchor);
                                         const childAnchors = [];
-                                        function createNode(value) {
+                                        const createNode = (value) => {
                                             while (typeof value === 'function')
                                                 value = value.call(element, element);
-                                            return flattenRenderable(value).filter(node => node !== null && node !== undefined && node !== false);
-                                        }
+                                            return flattenRenderable(value).filter(n => n != null && n !== false);
+                                        };
                                         arg().forEach((item, i) => {
                                             const marker = new Text();
-                                            childAnchors[i] = marker;
+                                            childAnchors.push(marker);
                                             anchor.before(marker, ...createNode(item));
                                         });
+                                        const snapshotGroups = () => childAnchors.map((marker, i) => {
+                                            const end = childAnchors[i + 1] || anchor;
+                                            const nodes = [];
+                                            for (let n = marker; n && n !== end; n = n.nextSibling)
+                                                nodes.push(n);
+                                            return nodes;
+                                        });
+                                        const reorder = (mapping) => {
+                                            const groups = snapshotGroups();
+                                            for (let idx of mapping)
+                                                for (let node of groups[idx])
+                                                    anchor.before(node);
+                                            childAnchors.splice(0, childAnchors.length, ...mapping.map(i => childAnchors[i]));
+                                        };
                                         function update(change) {
                                             if ("index" in change) {
                                                 const { index, oldItems, newItems } = change;
                                                 if (oldItems?.length) {
-                                                    for (let i = 0; i < oldItems.length; i++) {
-                                                        const marker = childAnchors[index];
-                                                        let next = marker.nextSibling;
-                                                        while (next && next !== childAnchors[index + 1]) {
-                                                            const toRemove = next;
-                                                            next = next.nextSibling;
-                                                            toRemove.remove();
-                                                        }
-                                                        marker.remove();
-                                                        childAnchors.splice(index, 1);
+                                                    const startMarker = childAnchors[index];
+                                                    const endMarker = childAnchors[index + oldItems.length] || anchor;
+                                                    let node = startMarker;
+                                                    while (node && node !== endMarker) {
+                                                        const next = node.nextSibling;
+                                                        node.remove();
+                                                        node = next;
                                                     }
+                                                    childAnchors.splice(index, oldItems.length);
                                                 }
                                                 if (newItems?.length) {
-                                                    for (let i = 0; i < newItems.length; i++) {
+                                                    const markers = [];
+                                                    const nodes = [];
+                                                    for (let item of newItems) {
                                                         const marker = new Text();
-                                                        const refNode = childAnchors[index] || anchor;
-                                                        refNode.before(marker, ...createNode(newItems[i]));
-                                                        childAnchors.splice(index + i, 0, marker);
+                                                        markers.push(marker);
+                                                        nodes.push(marker, ...createNode(item));
                                                     }
+                                                    (childAnchors[index] || anchor).before(...nodes);
+                                                    childAnchors.splice(index, 0, ...markers);
                                                 }
                                             }
                                             else if ("reversed" in change) {
-                                                const nodes = [];
-                                                for (let i = 0; i < childAnchors.length; i++) {
-                                                    const marker = childAnchors[i];
-                                                    let cursor = marker.nextSibling;
-                                                    const group = [marker];
-                                                    while (cursor && (i === childAnchors.length - 1 || cursor !== childAnchors[i + 1])) {
-                                                        group.push(cursor);
-                                                        cursor = cursor.nextSibling;
-                                                    }
-                                                    nodes.push(...group);
-                                                }
-                                                nodes.reverse().forEach(node => anchor.before(node));
-                                                childAnchors.reverse();
+                                                reorder([...childAnchors.keys()].reverse());
                                             }
                                             else if ("sortedIndices" in change) {
-                                                const mapping = change.sortedIndices;
-                                                const newOrder = [];
-                                                for (let i = 0; i < mapping.length; i++) {
-                                                    const marker = childAnchors[mapping[i]];
-                                                    let cursor = marker;
-                                                    const group = [];
-                                                    do {
-                                                        group.push(cursor);
-                                                        cursor = cursor.nextSibling;
-                                                    } while (cursor && mapping.includes(childAnchors.indexOf(cursor)) === false);
-                                                    newOrder.push(marker);
-                                                    group.forEach(n => anchor.before(n));
-                                                }
-                                                childAnchors.splice(0, childAnchors.length, ...newOrder);
+                                                reorder(change.sortedIndices);
                                             }
                                         }
                                         arg.addEventListener("valuechanged", (e) => update(e));
@@ -550,7 +568,7 @@ Object.defineProperties(Document.prototype, {
                                                 projected = projected.call(element, element);
                                             const fragment = new DocumentFragment();
                                             fragment.append(...flattenRenderable(projected).filter(node => node !== null && node !== undefined && node !== false));
-                                            currentNodes = Array.from(fragment.children);
+                                            currentNodes = Array.from(fragment.childNodes);
                                             anchor.after(fragment);
                                         }
                                         ;
@@ -658,8 +676,10 @@ const observable = function (initialValue) {
         return value;
     });
     Object.setPrototypeOf(obs, observable.prototype);
-    obs.bindTo = Object.setPrototypeOf(Object.assign((...args) => obs(...args), { type: "to" }), obs);
-    obs.bindFrom = Object.setPrototypeOf(Object.assign((...args) => obs(...args), { type: "from" }), obs);
+    obs.bind = Object.create(observable.prototype.bind);
+    obs.bind.__observable__ = obs;
+    obs.bind.to = Object.setPrototypeOf(Object.assign((...args) => obs(...args), { type: "to" }), obs);
+    obs.bind.from = Object.setPrototypeOf(Object.assign((...args) => obs(...args), { type: "from" }), obs);
     return obs;
 };
 Object.setPrototypeOf(observable.prototype, baseObservable.prototype);
@@ -692,4 +712,6 @@ observable.prototype.optimistic = function (updater, promise) {
         throw err;
     });
 };
+observable.prototype.bind = Object.create(baseObservable.prototype.bind);
+observable.prototype.bind.__observable__ = observable.prototype;
 //# sourceMappingURL=dom.js.map

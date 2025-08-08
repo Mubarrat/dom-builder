@@ -48,7 +48,9 @@ declare interface Function {
  *
  * @template T The type of the computed value.
  */
-interface computed<T = any> extends baseObservable<T> {}
+interface computed<T = any> extends baseObservable<T> {
+	readonly value: T;
+}
 
 interface computedConstructor extends Omit<baseObservableConstructor, ''> {
 	<T>(this: () => T, ...observables: baseObservable[]): computed<T>;
@@ -57,7 +59,7 @@ interface computedConstructor extends Omit<baseObservableConstructor, ''> {
 	 * Prototype object for all {@link computed} instances.
 	 * Useful for extending methods or introspection.
 	 */
-	prototype: computed;
+	readonly prototype: computed;
 }
 
 // Encapsulated in a block scope to avoid polluting the global scope.
@@ -94,8 +96,7 @@ interface computedConstructor extends Omit<baseObservableConstructor, ''> {
 }
 
 // Establish prototype and inheritance
-Function.prototype.computed.prototype = Object.create(baseObservable.prototype) as computed;
-Function.prototype.computed.prototype.constructor = Function.prototype.computed;
+Object.setPrototypeOf(Function.prototype.computed.prototype, baseObservable.prototype);
 Object.setPrototypeOf(Function.prototype.computed, baseObservable);
 Object.defineProperty(Function.prototype.computed.prototype, Symbol.toStringTag, {
 	value: 'computed',

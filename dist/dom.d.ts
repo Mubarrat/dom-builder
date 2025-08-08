@@ -95,13 +95,6 @@ interface baseObservable<T = any> extends EventTarget {
      */
     tryChange<TResult>(fn: () => TResult, change?: object): TResult | undefined;
     /**
-     * Creates a derived observable mapped by a selector function.
-     *
-     * @param selector Maps the current value to a derived value.
-     * @returns A new {@link baseObservable} representing the derived value.
-     */
-    bindSelect<U>(selector: (val: T) => U): this;
-    /**
      * Adds validation logic to the observable.
      *
      * The returned object includes an `isValid` observable reflecting the
@@ -148,9 +141,9 @@ interface baseObservable<T = any> extends EventTarget {
      *
      * @template T The underlying value type of the observable.
      */
-    bind: {
+    bind: (T extends object | Function ? {
         [K in keyof T]: T[K] extends (...args: infer A) => infer R ? (...args: A) => computed<R> : computed<T[K]>;
-    } & {
+    } : {}) & {
         /** Reference to the current observable instance backing this bind proxy. */
         __observable__: baseObservable<T>;
         /**
@@ -169,7 +162,7 @@ interface baseObservableConstructor {
      * Prototype object for all {@link baseObservable} instances.
      * Useful for extending methods or introspection.
      */
-    prototype: baseObservable;
+    readonly prototype: baseObservable;
     /**
      * Binds a value or {@link baseObservable} to a setter and optional observer.
      *
@@ -221,19 +214,6 @@ type ArrayChange<T> = {
  */
 interface arrayObservable<T = any> extends baseObservable<T[]>, Array<T> {
     /**
-     * Create a reactive mapped projection of this observable array.
-     *
-     * @template U New element type
-     * @param mapper
-     * Function mapping `(item, index, source)` → `mapped value`.
-     * Called initially and on every update.
-     *
-     * @returns
-     * A read-only {@link arrayObservable} mirroring the source,
-     * throwing on any direct mutations.
-     */
-    bindMap<U>(mapper: (item: T, index: number, array: arrayObservable<T>) => U): arrayObservable<U>;
-    /**
      * Dispatches `valuechanging` events describing array mutations.
      *
      * @param change
@@ -282,13 +262,13 @@ interface arrayObservable<T = any> extends baseObservable<T[]>, Array<T> {
         map<U>(mapper: (item: T, index: number, array: arrayObservable<T>) => U): arrayObservable<U>;
     };
 }
-interface arrayObservableConstructor extends Omit<baseObservableConstructor, '' | 'prototype'> {
-    <T>(initialValues: Iterable<T>): arrayObservable<T>;
+interface arrayObservableConstructor extends Omit<baseObservableConstructor, ''> {
+    <T>(initialValues: Iterable<T> | ArrayLike<T> | number): arrayObservable<T>;
     /**
      * Prototype object for all {@link arrayObservable} instances.
      * Useful for extending methods or introspection.
      */
-    prototype: arrayObservable;
+    readonly prototype: arrayObservable;
 }
 declare const arrayObservable: arrayObservableConstructor;
 /**
@@ -316,6 +296,7 @@ declare interface Function {
  * @template T The type of the computed value.
  */
 interface computed<T = any> extends baseObservable<T> {
+    readonly value: T;
 }
 interface computedConstructor extends Omit<baseObservableConstructor, ''> {
     <T>(this: () => T, ...observables: baseObservable[]): computed<T>;
@@ -323,7 +304,7 @@ interface computedConstructor extends Omit<baseObservableConstructor, ''> {
      * Prototype object for all {@link computed} instances.
      * Useful for extending methods or introspection.
      */
-    prototype: computed;
+    readonly prototype: computed;
 }
 declare function cstr(strings: TemplateStringsArray, ...values: any[]): string | computed<string>;
 /**
@@ -456,20 +437,6 @@ declare const $mml: DomBuilders["http://www.w3.org/1998/Math/MathML"];
  */
 interface observable<T = any> extends baseObservable<T> {
     /**
-     * Returns an observable bound in **"to" mode** (ViewModel → UI):
-     *
-     * - Data flows **only from ViewModel to UI**.
-     * - UI changes will not propagate back to the ViewModel.
-     */
-    bindTo: observable<T>;
-    /**
-     * Returns an observable bound in **"from" mode** (UI → ViewModel):
-     *
-     * - Data flows **only from UI to ViewModel**.
-     * - ViewModel updates will not propagate to the UI automatically.
-     */
-    bindFrom: observable<T>;
-    /**
      * Callable form of the observable:
      * - **Getter**: No arguments → returns current value.
      * - **Setter**: With arguments → update and return new value.
@@ -496,14 +463,31 @@ interface observable<T = any> extends baseObservable<T> {
      * @returns The same `promise` for chaining (with rollback on rejection).
      */
     optimistic<R>(updater: (current: T) => T, promise: Promise<R>): Promise<R>;
+    bind: baseObservable<T>['bind'] & {
+        __observable__: observable<T>;
+        /**
+         * Returns an observable bound in **"to" mode** (ViewModel → UI):
+         *
+         * - Data flows **only from ViewModel to UI**.
+         * - UI changes will not propagate back to the ViewModel.
+         */
+        to: observable<T>;
+        /**
+         * Returns an observable bound in **"from" mode** (UI → ViewModel):
+         *
+         * - Data flows **only from UI to ViewModel**.
+         * - ViewModel updates will not propagate to the UI automatically.
+         */
+        from: observable<T>;
+    };
 }
 interface observableConstructor extends Omit<baseObservableConstructor, ''> {
-    <T>(initialValue?: T | undefined): observable<T>;
+    <T>(initialValue?: T): observable<T>;
     /**
      * Prototype object for all {@link observable} instances.
      * Allows introspection or extension of shared behavior.
      */
-    prototype: observable;
+    readonly prototype: observable;
 }
 declare const observable: observableConstructor;
 //# sourceMappingURL=dom.d.ts.map

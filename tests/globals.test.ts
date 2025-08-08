@@ -60,9 +60,9 @@ test.describe("globals DOM builder", () => {
             const color = observable("blue");
             const div = this.$html.div({ style: { color } });
             color("orange");
-            return div.style.color === "orange";
+            return div.style.color;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("orange");
     });
 
     test("attaches single event listener with onX", async ({ page }) => {
@@ -96,9 +96,9 @@ test.describe("globals DOM builder", () => {
             const obs = observable("abc");
             const div = this.$html.div({ data: { foo: obs } });
             obs("xyz");
-            return div.dataset.foo === "xyz";
+            return div.dataset.foo;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("xyz");
     });
 
     test("binds observable to value of input", async ({ page }) => {
@@ -106,9 +106,9 @@ test.describe("globals DOM builder", () => {
             const obs = observable("hi");
             const input = this.$html.input({ value: obs });
             obs("bye");
-            return input.value === "bye";
+            return input.value;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("bye");
     });
 
     test("binds observable to checked of checkbox", async ({ page }) => {
@@ -116,9 +116,9 @@ test.describe("globals DOM builder", () => {
             const obs = observable(true);
             const input = this.$html.input({ type: "checkbox", checked: obs });
             obs(false);
-            return input.checked === false;
+            return input.checked;
         });
-        expect(result).toBe(true);
+        expect(result).toBe(false);
     });
 
     test("binds observable to generic attribute", async ({ page }) => {
@@ -126,9 +126,9 @@ test.describe("globals DOM builder", () => {
             const obs = observable("bar");
             const div = this.$html.div({ title: obs });
             obs("baz");
-            return div.title === "baz";
+            return div.title;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("baz");
     });
 
     test("observable child updates text content", async ({ page }) => {
@@ -136,9 +136,9 @@ test.describe("globals DOM builder", () => {
             const obs = observable("hello");
             const div = this.$html.div(obs);
             obs("world");
-            return div.textContent === "world";
+            return div.textContent;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("world");
     });
 
     test("arrayObservable child renders and updates", async ({ page }) => {
@@ -146,9 +146,9 @@ test.describe("globals DOM builder", () => {
             const arr = arrayObservable(["a", "b"]);
             const div = this.$html.div(arr);
             arr.push("c");
-            return div.textContent === "abc";
+            return div.textContent;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("abc");
     });
 
     test("arrayObservable child removes nodes on splice", async ({ page }) => {
@@ -156,9 +156,9 @@ test.describe("globals DOM builder", () => {
             const arr = arrayObservable(["x", "y", "z"]);
             const div = this.$html.div(arr);
             arr.splice(1, 1);
-            return div.textContent === "xz";
+            return div.textContent;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("xz");
     });
 
     test("arrayObservable child reverses nodes", async ({ page }) => {
@@ -166,9 +166,9 @@ test.describe("globals DOM builder", () => {
             const arr = arrayObservable([1, 2, 3]);
             const div = this.$html.div(arr);
             arr.reverse();
-            return div.textContent === "321";
+            return div.textContent;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("321");
     });
 
     test("arrayObservable child sorts nodes", async ({ page }) => {
@@ -176,9 +176,9 @@ test.describe("globals DOM builder", () => {
             const arr = arrayObservable([3, 1, 2]);
             const div = this.$html.div(arr);
             arr.sort();
-            return div.textContent === "123";
+            return div.textContent;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("123");
     });
 
     test("custom builder creates element with correct namespace", async ({ page }) => {
@@ -193,25 +193,25 @@ test.describe("globals DOM builder", () => {
     test("builder proxies support toString", async ({ page }) => {
         const result = await page.evaluate(function (this: Window) {
             const $foo = this.$dom("http://foo");
-            return typeof $foo.toString() === "string";
+            return typeof $foo.toString();
         });
-        expect(result).toBe(true);
+        expect(result).toBe("string");
     });
 
     test("children can be arrays", async ({ page }) => {
         const result = await page.evaluate(function (this: Window) {
             const div = this.$html.div(["a", "b", "c"]);
-            return div.textContent === "abc";
+            return div.textContent;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("abc");
     });
 
     test("children can be nested arrays", async ({ page }) => {
         const result = await page.evaluate(function (this: Window) {
             const div = this.$html.div([["a", ["b"]], "c"]);
-            return div.textContent === "abc";
+            return div.textContent;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("abc");
     });
 
     test("children can be DOM nodes", async ({ page }) => {
@@ -232,25 +232,25 @@ test.describe("globals DOM builder", () => {
             }
             const div = this.$html.div(gen());
             await new Promise(r => setTimeout(r, 10));
-            return div.textContent === "ab";
+            return div.textContent;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("ab");
     });
 
     test("children can be text nodes and numbers", async ({ page }) => {
         const result = await page.evaluate(function (this: Window) {
             const div = this.$html.div("foo", 123, "bar");
-            return div.textContent === "foo123bar";
+            return div.textContent;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("foo123bar");
     });
 
-    test("children can be booleans and null (should be ignored)", async ({ page }) => {
+    test("children can be booleans (only false), undefined and null (should be ignored)", async ({ page }) => {
         const result = await page.evaluate(function (this: Window) {
             const div = this.$html.div(true, false, null, undefined, "ok");
-            return div.textContent === "ok";
+            return div.textContent;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("trueok");
     });
 
     test("observable as attribute updates attribute", async ({ page }) => {
@@ -258,9 +258,9 @@ test.describe("globals DOM builder", () => {
             const obs = observable("foo");
             const div = this.$html.div({ title: obs });
             obs("bar");
-            return div.title === "bar";
+            return div.title;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("bar");
     });
 
     test("observable as child replaces text node", async ({ page }) => {
@@ -268,9 +268,9 @@ test.describe("globals DOM builder", () => {
             const obs = observable("a");
             const div = this.$html.div(obs);
             obs("b");
-            return div.textContent === "b";
+            return div.textContent;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("b");
     });
 
     test("arrayObservable as child updates on splice", async ({ page }) => {
@@ -278,9 +278,9 @@ test.describe("globals DOM builder", () => {
             const arr = arrayObservable(["a", "b", "c"]);
             const div = this.$html.div(arr);
             arr.splice(1, 1, "x", "y");
-            return div.textContent === "axyc";
+            return div.textContent;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("axyc");
     });
 
     test("arrayObservable as child updates on fill", async ({ page }) => {
@@ -288,9 +288,9 @@ test.describe("globals DOM builder", () => {
             const arr = arrayObservable([1, 2, 3]);
             const div = this.$html.div(arr);
             arr.fill(9);
-            return div.textContent === "999";
+            return div.textContent;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("999");
     });
 
     test("arrayObservable as child updates on copyWithin", async ({ page }) => {
@@ -298,9 +298,9 @@ test.describe("globals DOM builder", () => {
             const arr = arrayObservable([1, 2, 3, 4]);
             const div = this.$html.div(arr);
             arr.copyWithin(1, 2, 4);
-            return div.textContent === "1344";
+            return div.textContent;
         });
-        expect(result).toBe(true);
+        expect(result).toBe("1344");
     });
 
     test("input value updates observable", async ({ page }) => {
@@ -309,9 +309,9 @@ test.describe("globals DOM builder", () => {
             const input = this.$html.input({ value: obs });
             input.value = "changed";
             input.dispatchEvent(new Event("input"));
-            return obs() === "changed";
+            return obs();
         });
-        expect(result).toBe(true);
+        expect(result).toBe("changed");
     });
 
     test("checkbox checked updates observable", async ({ page }) => {
@@ -320,7 +320,7 @@ test.describe("globals DOM builder", () => {
             const input = this.$html.input({ type: "checkbox", checked: obs });
 			this.document.body.append(input);
             input.click(); // Toggle by clicking
-            return obs() === true;
+            return obs();
         });
         expect(result).toBe(true);
     });
@@ -329,10 +329,11 @@ test.describe("globals DOM builder", () => {
         const result = await page.evaluate(function (this: Window) {
             const obs = observable("foo");
             const div = this.$html.div({ data: { bar: obs } });
+            this.document.body.append(div);
 			div.dataset.bar = "baz";
-            return new Promise(resolve => setTimeout(() => resolve(obs() === "baz"), 100));
+            return new Promise(resolve => setTimeout(() => resolve(obs()), 100));
         });
-        expect(result).toBe(true);
+        expect(result).toBe("baz");
     });
 
     test("can create deeply nested elements", async ({ page }) => {

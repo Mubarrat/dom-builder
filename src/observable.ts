@@ -42,22 +42,6 @@
  */
 interface observable<T = any> extends baseObservable<T> {
 	/**
-	 * Returns an observable bound in **"to" mode** (ViewModel → UI):
-	 *
-	 * - Data flows **only from ViewModel to UI**.
-	 * - UI changes will not propagate back to the ViewModel.
-	 */
-	bindTo: observable<T>;
-
-	/**
-	 * Returns an observable bound in **"from" mode** (UI → ViewModel):
-	 *
-	 * - Data flows **only from UI to ViewModel**.
-	 * - ViewModel updates will not propagate to the UI automatically.
-	 */
-	bindFrom: observable<T>;
-
-	/**
 	 * Callable form of the observable:
 	 * - **Getter**: No arguments → returns current value.
 	 * - **Setter**: With arguments → update and return new value.
@@ -85,20 +69,40 @@ interface observable<T = any> extends baseObservable<T> {
 	 * @returns The same `promise` for chaining (with rollback on rejection).
 	 */
 	optimistic<R>(updater: (current: T) => T, promise: Promise<R>): Promise<R>;
+
+	bind: baseObservable<T>['bind'] & {
+		__observable__: observable<T>;
+
+		/**
+		 * Returns an observable bound in **"to" mode** (ViewModel → UI):
+		 *
+		 * - Data flows **only from ViewModel to UI**.
+		 * - UI changes will not propagate back to the ViewModel.
+		 */
+		to: observable<T>;
+
+		/**
+		 * Returns an observable bound in **"from" mode** (UI → ViewModel):
+		 *
+		 * - Data flows **only from UI to ViewModel**.
+		 * - ViewModel updates will not propagate to the UI automatically.
+		 */
+		from: observable<T>;
+	}
 }
 
 interface observableConstructor extends Omit<baseObservableConstructor, ''> {
-	<T>(initialValue?: T | undefined): observable<T>;
+	<T>(initialValue?: T): observable<T>;
 
 	/**
 	 * Prototype object for all {@link observable} instances.
 	 * Allows introspection or extension of shared behavior.
 	 */
-	prototype: observable;
+	readonly prototype: observable;
 }
 
-const observable = function<T>(initialValue?: T | undefined): observable<T> {
-	let value = initialValue;
+const observable = function<T>(initialValue?: T): observable<T> {
+	let value = initialValue as T;
 
 	// Wrap the internal value in a baseObservable for reactivity
 	const obs = baseObservable(function (newValue) {
@@ -111,9 +115,12 @@ const observable = function<T>(initialValue?: T | undefined): observable<T> {
 
 	Object.setPrototypeOf(obs, observable.prototype);
 
+	obs.bind = Object.create(observable.prototype.bind);
+	obs.bind.__observable__ = obs;
+
 	// Create bound variants (to/from) inheriting from `obs`
-	obs.bindTo = Object.setPrototypeOf(Object.assign((...args) => obs(...args), { type: "to" }), obs);
-	obs.bindFrom = Object.setPrototypeOf(Object.assign((...args) => obs(...args), { type: "from" }), obs);
+	obs.bind.to = Object.setPrototypeOf(Object.assign((...args) => obs(...args), { type: "to" }), obs);
+	obs.bind.from = Object.setPrototypeOf(Object.assign((...args) => obs(...args), { type: "from" }), obs);
 
 	return obs;
 } as observableConstructor;
@@ -154,3 +161,6 @@ observable.prototype.optimistic = function<T, R>(updater: (current: T) => T, pro
 		throw err;
 	});
 };
+
+observable.prototype.bind = Object.create(baseObservable.prototype.bind);
+observable.prototype.bind.__observable__ = observable.prototype;

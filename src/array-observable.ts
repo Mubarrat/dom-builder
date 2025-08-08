@@ -54,20 +54,6 @@ type ArrayChange<T> =
  */
 interface arrayObservable<T = any> extends baseObservable<T[]>, Array<T> {
 	/**
-	 * Create a reactive mapped projection of this observable array.
-	 *
-	 * @template U New element type
-	 * @param mapper
-	 * Function mapping `(item, index, source)` → `mapped value`.
-	 * Called initially and on every update.
-	 *
-	 * @returns
-	 * A read-only {@link arrayObservable} mirroring the source,
-	 * throwing on any direct mutations.
-	 */
-	bindMap<U>(mapper: (item: T, index: number, array: arrayObservable<T>) => U): arrayObservable<U>;
-
-	/**
 	 * Dispatches `valuechanging` events describing array mutations.
 	 *
 	 * @param change
@@ -121,19 +107,19 @@ interface arrayObservable<T = any> extends baseObservable<T[]>, Array<T> {
 	}
 }
 
-interface arrayObservableConstructor extends Omit<baseObservableConstructor, '' | 'prototype'> {
-	<T>(initialValues: Iterable<T>): arrayObservable<T>;
+interface arrayObservableConstructor extends Omit<baseObservableConstructor, ''> {
+	<T>(initialValues: Iterable<T> | ArrayLike<T> | number): arrayObservable<T>;
 
 	/**
 	 * Prototype object for all {@link arrayObservable} instances.
 	 * Useful for extending methods or introspection.
 	 */
-	prototype: arrayObservable;
+	readonly prototype: arrayObservable;
 }
 
-const arrayObservable = function<T>(initialValues: Iterable<T>): arrayObservable<T> {
+const arrayObservable = function<T>(initialValues: Iterable<T> | ArrayLike<T> | number): arrayObservable<T> {
 	// Internal backing storage (never directly exposed to users)
-	const array: T[] = [...initialValues];
+	const array: T[] = typeof initialValues === 'number' ? new Array(initialValues).fill(undefined) : Array.from(initialValues);
 
 	// Base observable for broadcasting value changes
 	const obs = baseObservable(() => [...array]) as arrayObservable<T>;
@@ -180,19 +166,23 @@ const arrayObservable = function<T>(initialValues: Iterable<T>): arrayObservable
 
 				case "sort":
 					return (compareFn?: (a: T, b: T) => number) => {
-						// Pre-notify with the intent
 						if (!target.notifyBefore({ sortFn: compareFn || null })) return receiver;
 
-						// Perform sort
-						const oldArray = [...array];
-						array.sort(compareFn);
+						// Pair each item with its original index
+						const indexed = array.map((v, i) => ({ v, i }));
 
-						// Compute permutation mapping: old index → new index
-						const sortedIndices = oldArray.map(item => array.indexOf(item));
+						// Sort the pairs by value, using the compare function
+						indexed.sort((a, b) => (compareFn ? compareFn(a.v, b.v) : (a.v > b.v ? 1 : a.v < b.v ? -1 : 0)));
 
-						// Post-notify with the actual permutation
+						// Apply the sorted values back to the original array
+						for (let i = 0; i < array.length; i++) {
+							array[i] = indexed[i].v;
+						}
+
+						// Build sortedIndices: new index → original index
+						const sortedIndices = indexed.map(pair => pair.i);
+
 						target.notify({ sortedIndices });
-
 						return receiver;
 					};
 
@@ -263,6 +253,19 @@ const arrayObservable = function<T>(initialValues: Iterable<T>): arrayObservable
 			return prop in target;
 		},
 
+		deleteProperty(target, prop) {
+			if (typeof prop === "string") {
+				const n = Number(prop);
+				if (Number.isInteger(n) && n >= 0 && String(n) === prop) {
+					return target.tryChange(() => {
+						array[n] = undefined as T;
+						return true;
+					}, { index: n, oldItems: [array[n]], newItems: [undefined as T] }) ?? false;
+				}
+			}
+			return Reflect.deleteProperty(target, prop);
+		},
+
 		ownKeys: target =>
 			Array.from({ length: array.length }, (_, i) => i.toString()).concat(Object.getOwnPropertyNames(target)),
 
@@ -298,6 +301,20 @@ const arrayObservable = function<T>(initialValues: Iterable<T>): arrayObservable
 
 Object.setPrototypeOf(arrayObservable.prototype, baseObservable.prototype);
 Object.setPrototypeOf(arrayObservable, baseObservable);
+
+Object.defineProperties(arrayObservable.prototype, {
+	[Symbol.species]: {
+		get() { return arrayObservable; },
+		enumerable: false,
+		configurable: false
+	},
+	[Symbol.toStringTag]: {
+		value: 'arrayObservable',
+		writable: false,
+		enumerable: false,
+		configurable: false
+	}
+});
 
 arrayObservable.prototype.optimistic = function<T, R>(updater: (current: arrayObservable<T>) => void, promise: Promise<R>): Promise<R> {
 	// Collect all valuechanged events triggered by updater
@@ -335,13 +352,6 @@ arrayObservable.prototype.optimistic = function<T, R>(updater: (current: arrayOb
 		throw err;
 	});
 };
-
-Object.defineProperty(arrayObservable.prototype, Symbol.toStringTag, {
-	value: 'arrayObservable',
-	writable: false,
-	enumerable: false,
-	configurable: false
-});
 
 arrayObservable.prototype.bind = Object.create(baseObservable.prototype.bind);
 arrayObservable.prototype.bind.__observable__ = arrayObservable.prototype;

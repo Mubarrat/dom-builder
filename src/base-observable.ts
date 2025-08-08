@@ -81,14 +81,6 @@ interface baseObservable<T = any> extends EventTarget {
 	tryChange<TResult>(fn: () => TResult, change?: object): TResult | undefined;
 
 	/**
-	 * Creates a derived observable mapped by a selector function.
-	 *
-	 * @param selector Maps the current value to a derived value.
-	 * @returns A new {@link baseObservable} representing the derived value.
-	 */
-	bindSelect<U>(selector: (val: T) => U): this;
-
-	/**
 	 * Adds validation logic to the observable.
 	 *
 	 * The returned object includes an `isValid` observable reflecting the
@@ -137,7 +129,7 @@ interface baseObservable<T = any> extends EventTarget {
 	 *
 	 * @template T The underlying value type of the observable.
 	 */
-	bind: {
+	bind: (T extends object | Function ? {
 		/**
 		 * Automatically projects properties and methods of the current value into
 		 * observables:
@@ -146,7 +138,7 @@ interface baseObservable<T = any> extends EventTarget {
 		 */
 		[K in keyof T]: T[K] extends (...args: infer A) => infer R
 			? (...args: A) => computed<R> : computed<T[K]>;
-	} & {
+	} : {}) & {
 		/** Reference to the current observable instance backing this bind proxy. */
 		__observable__: baseObservable<T>;
 
@@ -168,7 +160,7 @@ interface baseObservableConstructor {
 	 * Prototype object for all {@link baseObservable} instances.
 	 * Useful for extending methods or introspection.
 	 */
-	prototype: baseObservable;
+	readonly prototype: baseObservable;
 
 	/**
 	 * Binds a value or {@link baseObservable} to a setter and optional observer.
