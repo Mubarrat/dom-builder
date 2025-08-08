@@ -23,20 +23,53 @@
 /// <reference path="base-observable.ts" />
 
 /**
- * Describes changes to an {@link arrayObservable}.
+ * Describes the shape of change events emitted by an {@link arrayObservable}.
  *
- * - Supports granular mutations (insert/remove at index)
- * - Supports structural reorder operations (reverse, sort)
+ * This type models the various mutation operations possible on the observable array.
+ * Each variant corresponds to a particular mutation category:
+ * - Insertions/removals/replacements at a specific index,
+ * - Reversals of the entire array,
+ * - Sorting operations with optional custom comparer,
+ * - Providing indices mapping for sorted array items.
  *
- * @template T Element type of the observable array
+ * This enables consumers and internal implementations to precisely react to
+ * what part of the array changed and how.
+ *
+ * @template T The type of elements contained in the observable array.
+ *
+ * @example
+ * ```ts
+ * // Example of an insertion change:
+ * const insertion: ArrayChange<string> = {
+ *   index: 2,
+ *   newItems: ["hello", "world"]
+ * };
+ *
+ * // Example of a reversal change:
+ * const reversal: ArrayChange<number> = { reversed: true };
+ *
+ * // Example of a sort change with a comparator:
+ * const sort: ArrayChange<number> = {
+ *   sortFn: (a, b) => a - b
+ * };
+ *
+ * // Example of sorted indices change (mapping new index → old index):
+ * const sortedIndicesChange: ArrayChange<number> = {
+ *   sortedIndices: [2, 0, 1]
+ * };
+ * ```
+ *
+ * @see {@link arrayObservable} for usage.
  */
 type ArrayChange<T> =
 	| {
-		/** Index where elements were added/removed/replaced */
+		/** The zero-based index at which elements were inserted, removed, or replaced. */
 		index: number;
-		/** New elements (if any) inserted at `index` */
+
+		/** The new elements inserted at the specified index, if any. */
 		newItems?: T[];
-		/** Previous elements removed from `index` */
+
+		/** The previous elements removed from the specified index, if any. */
 		oldItems?: T[];
 	}
 	| { reversed: true }
@@ -44,79 +77,216 @@ type ArrayChange<T> =
 	| { sortedIndices: number[] };
 
 /**
- * Reactive array type combining {@link baseObservable} semantics with native Array methods.
+ * A reactive, observable array type that extends native Array capabilities with
+ * fine-grained change notifications and proxy-based index access.
  *
- * - Provides `valuechanged` events describing precise mutations
- * - Proxy-wrapped for transparent index/length access
- * - Supports read-only derived projections via {@link arrayObservable.bindMap}
+ * This type wraps a native array and provides:
+ * - Transparent proxy access via index or length properties,
+ * - Precise mutation events describing granular changes (insert, remove, reorder),
+ * - Support for optimistic updates with rollback on async failure,
+ * - Read-only mapped projections that stay synchronized with source changes,
+ * - Compatibility with a base observable pattern (from {@link baseObservable}).
  *
- * @template T Element type
+ * @template T The type of elements contained in the observable array.
+ *
+ * @remarks
+ * The {@link arrayObservable} is designed for reactive programming scenarios where
+ * UI or other consumers need to update precisely and efficiently on array changes.
+ * It supports all standard array mutation methods (`push`, `pop`, `splice`, etc.)
+ * while emitting structured change events.
+ *
+ * @example
+ * ```ts
+ * import { arrayObservable } from 'your-observable-library';
+ *
+ * // Create an observable array of numbers
+ * const numbers = arrayObservable([1, 2, 3]);
+ *
+ * // Listen for detailed changes
+ * numbers.addEventListener('valuechanged', (event) => {
+ *   console.log('Change detected:', event.detail);
+ * });
+ *
+ * // Mutate the array - triggers change notifications
+ * numbers.push(4);    // Change: { index: 3, newItems: [4] }
+ * numbers.splice(1, 1, 9); // Change: { index: 1, oldItems: [2], newItems: [9] }
+ *
+ * // Reactive UI frameworks can subscribe and update only changed parts.
+ * ```
+ *
+ * @see {@link ArrayChange} for the shape of change events emitted.
+ * @see {@link baseObservable} for base observable functionality.
  */
 interface arrayObservable<T = any> extends baseObservable<T[]>, Array<T> {
 	/**
-	 * Dispatches `valuechanging` events describing array mutations.
+	 * Notifies listeners *before* a mutation is applied.
 	 *
-	 * @param change
-	 * Structured change payload describing
-	 * either granular index mutations or structural reorder operations.
+	 * This method dispatches a `valuechanging` event containing a structured
+	 * payload describing the planned mutation. Listeners can cancel the operation
+	 * by returning `false`.
+	 *
+	 * @param change An {@link ArrayChange} describing the intended mutation.
+	 * @returns `true` if the change is allowed and should proceed, `false` if canceled.
+	 *
+	 * @example
+	 * ```ts
+	 * observableArray.addEventListener('valuechanging', (e) => {
+	 *   if (someCondition) e.preventDefault(); // cancels change
+	 * });
+	 * const allowed = observableArray.notifyBefore({ index: 0, newItems: [42] });
+	 * if (allowed) {
+	 *   // proceed with mutation
+	 * }
+	 * ```
 	 */
 	notifyBefore(change: ArrayChange<T>): boolean;
 
 	/**
-	 * Dispatches `valuechanged` events describing array mutations.
+	 * Notifies listeners *after* a mutation has been applied.
 	 *
-	 * @param change
-	 * Structured change payload describing
-	 * either granular index mutations or structural reorder operations.
+	 * This method dispatches a `valuechanged` event containing a structured
+	 * payload describing the mutation that just occurred.
+	 *
+	 * @param change An {@link ArrayChange} describing the mutation that was applied.
+	 *
+	 * @example
+	 * ```ts
+	 * observableArray.addEventListener('valuechanged', (e) => {
+	 *   console.log('Array mutated:', e.detail);
+	 * });
+	 * observableArray.notify({ index: 1, oldItems: [10], newItems: [20] });
+	 * ```
 	 */
 	notify(change: ArrayChange<T>): void;
 
 	/**
-	 * Attempts to change the value by invoking a provided mutator function.
+	 * Attempts to apply a mutation atomically by invoking a mutator function.
 	 *
-	 * Calls `notifyBefore()` first; if canceled, does nothing and returns `undefined`.
-	 * Otherwise applies the change, calls `notify()`, and returns the function’s result.
+	 * This method wraps the mutation in `notifyBefore` and `notify` calls.
+	 * If `notifyBefore` returns `false`, the mutation is canceled and no changes
+	 * occur.
 	 *
-	 * @param fn The function that performs the actual change and returns a result.
-	 * @param change {@link ArrayChange} object describing the change.
-	 * @returns The result of `fn()` if applied; otherwise `undefined` if canceled.
+	 * @param fn A synchronous function performing the mutation and returning a result.
+	 * @param change An {@link ArrayChange} describing the mutation for notification.
+	 * @returns The return value of `fn` if the mutation succeeds; otherwise `undefined`.
+	 *
+	 * @example
+	 * ```ts
+	 * const result = observableArray.tryChange(() => {
+	 *   observableArray.push(5);
+	 *   return observableArray.length;
+	 * }, { index: observableArray.length, newItems: [5] });
+	 * if (result === undefined) {
+	 *   console.log('Mutation was canceled');
+	 * } else {
+	 *   console.log('New length:', result);
+	 * }
+	 * ```
 	 */
 	tryChange<TResult>(fn: () => TResult, change: ArrayChange<T>): TResult | undefined;
 
 	/**
-	 * Applies an **optimistic update** strategy to the array:
+	 * Performs an *optimistic update* that can be rolled back if an async operation fails.
 	 *
-	 * - Immediately mutates the array using `updater`.
-	 * - If the `promise` resolves, keeps the optimistic changes.
-	 * - If the `promise` rejects, reverts the array to its previous state.
+	 * Applies the synchronous `updater` function to mutate the array immediately.
+	 * If the provided `promise` resolves, the changes are kept.
+	 * If the `promise` rejects, all changes caused by `updater` are reverted.
+	 *
+	 * @typeParam R The type of the value resolved by the promise.
+	 * @param updater A synchronous function that applies mutations to the array optimistically.
+	 * @param promise An asynchronous operation representing the intended update outcome.
+	 * @returns The same `promise`, allowing further chaining.
 	 *
 	 * @remarks
-	 * The `updater` function **must be synchronous**; asynchronous mutations
-	 * will not be captured for rollback.
+	 * - The `updater` function **must be synchronous**. Asynchronous mutations
+	 *   inside `updater` will not be tracked correctly for rollback.
+	 * - This method is useful for cases where optimistic UI updates are desired,
+	 *   but errors from async operations should revert the UI.
 	 *
-	 * @typeParam R The resolved type of the `promise`.
-	 * @param updater Function to synchronously and optimistically modify the array.
-	 * @param promise Async operation representing the intended update.
-	 * @returns The same `promise` for chaining, with rollback on rejection.
+	 * @example
+	 * ```ts
+	 * const updatePromise = fetch('/api/update', { method: 'POST', body: JSON.stringify(data) });
+	 * observableArray.optimistic(
+	 *   arr => arr.push(newItem),
+	 *   updatePromise
+	 * ).catch(() => {
+	 *   console.error('Update failed, changes reverted.');
+	 * });
+	 * ```
 	 */
 	optimistic<R>(updater: (current: arrayObservable<T>) => void, promise: Promise<R>): Promise<R>;
 
+	/**
+	 * Extended `bind` functionality inherited from {@link baseObservable}.
+	 *
+	 * Includes additional observable mapping methods.
+	 */
 	bind: baseObservable<T[]>['bind'] & {
 		__observable__: arrayObservable<T>;
+
+		/**
+		 * Creates a **read-only mapped projection** of the observable array.
+		 *
+		 * The mapped array stays synchronized with source mutations by applying
+		 * the `mapper` function to each element.
+		 *
+		 * The resulting mapped array:
+		 * - Is an {@link arrayObservable} of the mapped element type.
+		 * - Emits change events on source changes.
+		 * - Is **immutable**; attempts to mutate will throw errors.
+		 *
+		 * @template U The type of elements in the mapped array.
+		 * @param mapper A function mapping each source item to a new value.
+		 * @returns A new observable array reflecting the mapped items.
+		 *
+		 * @example
+		 * ```ts
+		 * const source = arrayObservable([1, 2, 3]);
+		 * const squares = source.bind.map(x => x * x);
+		 *
+		 * squares.addEventListener('valuechanged', e => {
+		 *   console.log('Squares updated:', e.detail);
+		 * });
+		 *
+		 * source.push(4);
+		 * // squares is now [1, 4, 9, 16]
+		 * ```
+		 */
 		map<U>(mapper: (item: T, index: number, array: arrayObservable<T>) => U): arrayObservable<U>;
-	}
+	};
 }
 
+/**
+ * Constructor interface for creating {@link arrayObservable} instances.
+ *
+ * Supports creating an observable array from:
+ * - An iterable of initial values,
+ * - An array-like object,
+ * - A number to create an empty array of that length.
+ *
+ * @example
+ * ```ts
+ * const obs = arrayObservable([1, 2, 3]);
+ * const obsFromArrayLike = arrayObservable(document.querySelectorAll('div'));
+ * const obsEmpty = arrayObservable(10); // 10 undefined elements
+ * ```
+ */
 interface arrayObservableConstructor extends Omit<baseObservableConstructor, ''> {
 	<T>(initialValues: Iterable<T> | ArrayLike<T> | number): arrayObservable<T>;
 
 	/**
 	 * Prototype object for all {@link arrayObservable} instances.
-	 * Useful for extending methods or introspection.
+	 * Useful for extending or introspecting instances.
 	 */
 	readonly prototype: arrayObservable;
 }
 
+/**
+ * Factory function implementing {@link arrayObservableConstructor}.
+ *
+ * Wraps a native array with a Proxy to enable transparent observable behavior,
+ * mutation interception, and change notifications.
+ */
 const arrayObservable = function<T>(initialValues: Iterable<T> | ArrayLike<T> | number): arrayObservable<T> {
 	// Internal backing storage (never directly exposed to users)
 	const array: T[] = typeof initialValues === 'number' ? new Array(initialValues).fill(undefined) : Array.from(initialValues);

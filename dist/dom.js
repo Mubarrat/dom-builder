@@ -10,8 +10,13 @@
 class ValueChangeEvent extends Event {
     constructor(type, change, options) {
         super(type, options);
-        if (change) {
-            Object.assign(this, change);
+        if (change !== undefined && change !== null) {
+            if (typeof change === 'object') {
+                Object.assign(this, change);
+            }
+            else {
+                console.warn('ValueChangeEvent: change parameter expected to be an object but received', change);
+            }
         }
     }
 }
@@ -347,7 +352,11 @@ arrayObservable.prototype.bind.map = function (mapper) {
     });
 };
 {
-    const computedRegistry = new FinalizationRegistry(({ observers, listener }) => observers.forEach(obs => obs.removeEventListener("valuechanged", listener)));
+    const computedRegistry = new FinalizationRegistry(({ observers, listener }) => {
+        observers.forEach(obs => {
+            obs.removeEventListener("valuechanged", listener);
+        });
+    });
     Function.prototype.computed = function (...observables) {
         const obs = baseObservable(this);
         const weakObs = new WeakRef(obs);
@@ -397,17 +406,36 @@ function cstr(strings, ...values) {
 }
 {
     const attributeObservers = new WeakMap();
-    new MutationObserver(mutations => mutations.forEach(mutation => attributeObservers
-        .get(mutation.target)
-        ?.get(mutation.attributeName)
-        ?.forEach(callback => callback()))).observe(document, { attributes: true, subtree: true });
+    new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            const handlersForElement = attributeObservers.get(mutation.target);
+            if (!handlersForElement)
+                return;
+            const callbacksForAttribute = handlersForElement.get(mutation.attributeName);
+            if (!callbacksForAttribute)
+                return;
+            callbacksForAttribute.forEach(callback => {
+                try {
+                    callback();
+                }
+                catch (e) {
+                    console.error("Error in attribute change callback:", e);
+                }
+            });
+        });
+    })
+        .observe(document, { attributes: true, subtree: true });
     var observeElementAttr = (element, attribute, callback) => {
         let handlers = attributeObservers.get(element);
-        if (!handlers)
-            attributeObservers.set(element, handlers = new Map());
+        if (!handlers) {
+            handlers = new Map();
+            attributeObservers.set(element, handlers);
+        }
         let callbacks = handlers.get(attribute);
-        if (!callbacks)
-            handlers.set(attribute, callbacks = new Set());
+        if (!callbacks) {
+            callbacks = new Set();
+            handlers.set(attribute, callbacks);
+        }
         callbacks.add(callback);
     };
 }

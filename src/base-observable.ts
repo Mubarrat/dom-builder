@@ -26,160 +26,280 @@
 /**
  * A lightweight reactive primitive for managing state and binding.
  *
- * A `baseObservable` is:
- * - A **callable object**: calling it with arguments updates/computes a value; without arguments, retrieves the current value.
- * - An **{@link EventTarget}**: notifies via `"valuechanged"` when updates occur.
- * - Configurable for **binding modes** (`to`, `from`, `two-way`).
- * - Extensible: supports derivation (`bindSelect`), validation (`validatable`), and coercion (`coercible`).
+ * This interface represents a foundational reactive programming primitive which
+ * is designed to efficiently encapsulate mutable state that can be observed,
+ * bound, and reacted to by multiple listeners in a UI or application logic context.
+ * It is intended to simplify synchronization between data sources and consumers
+ * by exposing a callable API that acts both as a getter and setter of a value.
  *
- * @template T The type of value stored or computed.
+ * The `baseObservable` type is designed to:
+ * - Act as a **callable object** that can be invoked as a function both with or without arguments.
+ * - Implement the {@link EventTarget} interface, thereby allowing for standardized event
+ *   dispatching and subscription, especially for notifying listeners of value changes.
+ * - Support declarative configuration of **binding modes** which control the direction
+ *   of data flow between ViewModel and UI layers.
+ * - Be extended with additional capabilities such as derivation of computed values,
+ *   validation of inputs, and coercion/transformation of incoming data before storage.
+ *
+ * @template T The generic type parameter `T` indicates the type of the value stored or computed
+ * by the observable. This type parameter enables type safety and IntelliSense support
+ * for consumers of this interface, ensuring consistent typing for the value being managed.
  */
 interface baseObservable<T = any> extends EventTarget {
+	/**
+	 * Internal EventTarget instance used for actual event dispatching and listener management.
+	 * This encapsulated property is used to implement the EventTarget interface methods
+	 * in a way that is compatible with environments where EventTarget cannot be directly extended.
+	 *
+	 * @private
+	 */
 	_eventTarget: EventTarget;
 
 	/**
-	 * Callable form of the observable:
-	 * - **Getter**: No arguments → returns current value.
-	 * - **Setter/Compute**: With arguments → updates value or re‑computes result.
+	 * The callable form of the observable:
 	 *
-	 * @param args Arguments for update/compute.
-	 * @returns Current value.
+	 * This is the key feature that allows the observable to be used as a function:
+	 * - When called with **no arguments**, it acts as a **getter** returning the current stored or computed value.
+	 * - When called with **one or more arguments**, it acts as a **setter or recompute trigger**, 
+	 *   updating the internal value based on the supplied arguments or recomputing it if it is derived.
+	 *
+	 * This dual behavior simplifies state interaction by merging getter and setter semantics
+	 * into a single call signature.
+	 *
+	 * @param args Zero or more arguments that influence the update or computation of the value.
+	 * The semantics and expected types of these arguments depend on the implementation details
+	 * of the specific observable.
+	 * @returns The current value of type `T` after applying any update or computation.
 	 */
 	(...args: any[]): T;
 
 	/**
-	 * Specifies binding direction:
-	 * - `"to"`: One‑way from ViewModel → UI.
-	 * - `"from"`: One‑way from UI → ViewModel.
-	 * - `"two-way"`: Bidirectional.
+	 * Defines the binding mode of the observable, specifying the directionality of data flow:
+	 *
+	 * - `"to"`: Indicates a **one-way binding** where data flows **from the ViewModel to the UI only**.
+	 *   In this mode, the observable pushes updates outward but does not accept changes from the UI.
+	 * - `"from"`: Indicates a **one-way binding** where data flows **from the UI to the ViewModel only**.
+	 *   Here, the observable receives input from UI changes but does not propagate updates outward.
+	 * - `"two-way"`: Indicates a **bidirectional binding** where data flows **both ways**,
+	 *   allowing synchronization between ViewModel and UI, accepting updates and pushing changes.
+	 *
+	 * This property governs how binding libraries and frameworks interact with the observable during
+	 * automatic binding and synchronization processes.
 	 */
 	type: "to" | "from" | "two-way";
 
 	/**
-	 * Dispatches `"valuechanging"` before change, allowing cancellation.
-	 * Returns `true` if change is allowed (default).
+	 * Dispatches a `"valuechanging"` event **before** the observable's value is changed.
+	 *
+	 * This pre-change notification event allows subscribers to observe impending changes,
+	 * inspect the details, and optionally cancel the update by calling `preventDefault()` on
+	 * the event. This mechanism provides a hook for validation, veto logic, or side effects
+	 * that should occur prior to committing a change.
+	 *
+	 * If the event is canceled by any listener, the observable will not apply the change.
+	 *
+	 * @param change Optional arbitrary object describing the nature, origin, or context of the change.
+	 * This object can be used by event handlers to make informed decisions about whether to allow
+	 * the change or not.
+	 * @returns Returns `true` if the change is allowed (i.e., no listener canceled the event);
+	 * returns `false` if the event was canceled and the change should not proceed.
 	 */
 	notifyBefore(change?: object): boolean;
 
 	/**
-	 * Dispatches a `"valuechanged"` event to notify subscribers of an update.
+	 * Dispatches a `"valuechanged"` event **after** the observable's value has been updated.
 	 *
-	 * @param change Optional object describing the nature of the change.
+	 * This post-change event notifies all registered subscribers that the observable's value
+	 * has changed, enabling them to react accordingly (e.g., updating UI elements, triggering
+	 * computations, or propagating changes).
+	 *
+	 * @param change Optional object containing metadata or contextual information about the change.
+	 * This can include previous values, reasons for the change, or any other relevant details.
 	 */
 	notify(change?: object): void;
 
 	/**
-	 * Attempts to change the value by invoking a provided mutator function.
+	 * Attempts to perform a value change operation by invoking a provided mutator function.
 	 *
-	 * Calls `notifyBefore()` first; if canceled, does nothing and returns `undefined`.
-	 * Otherwise applies the change, calls `notify()`, and returns the function’s result.
+	 * This method wraps the mutation logic inside an event-driven pattern:
+	 * - First, it calls `notifyBefore()` to dispatch a `"valuechanging"` event to allow listeners
+	 *   to cancel the change.
+	 * - If the event is not canceled, the provided function `fn` is executed to perform the actual
+	 *   change.
+	 * - After the change is applied, it calls `notify()` to dispatch a `"valuechanged"` event
+	 *   signaling the completion of the update.
 	 *
-	 * @param fn The function that performs the actual change and returns a result.
-	 * @param change Optional object describing the change.
-	 * @returns The result of `fn()` if applied; otherwise `undefined` if canceled.
+	 * This pattern provides a transactional update mechanism that respects event cancellation,
+	 * ensuring controlled and observable state mutations.
+	 *
+	 * @template TResult The return type of the mutation function `fn`.
+	 * @param fn A callback function that performs the actual mutation or update of the observable's value.
+	 * This function should return a result which is then propagated back to the caller.
+	 * @param change Optional object describing the intended change, passed to `notifyBefore()` and `notify()`.
+	 * @returns The result returned by the mutation function `fn()` if the change was successfully applied;
+	 * returns `undefined` if the change was canceled by any listener during `notifyBefore()`.
 	 */
 	tryChange<TResult>(fn: () => TResult, change?: object): TResult | undefined;
 
 	/**
-	 * Adds validation logic to the observable.
+	 * Enhances the observable with validation capabilities.
 	 *
-	 * The returned object includes an `isValid` observable reflecting the
-	 * result of the validator whenever the value changes.
+	 * This method adds an `isValid` computed observable property that reflects the validity
+	 * of the current value according to a provided validator function.
 	 *
-	 * @param validator Predicate returning `true` when the value is valid.
-	 * Defaults to always valid.
-	 * @returns The original observable with an additional `isValid` property.
+	 * The validator is a predicate function that takes the current value as input and returns
+	 * a boolean indicating whether the value is considered valid (`true`) or invalid (`false`).
+	 *
+	 * The `isValid` observable automatically updates whenever the base observable's value changes,
+	 * providing reactive validation state useful for UI validation, form feedback, or business rules.
+	 *
+	 * @param validator A predicate function `(val: T) => boolean` used to evaluate validity.
+	 * If omitted, defaults to a validator that always returns `true` (i.e., always valid).
+	 * @returns The original observable instance extended with an `isValid` computed observable property.
+	 * The returned type combines the original interface with `{ isValid: computed<boolean> }`.
 	 */
 	validatable(validator?: (val: T) => boolean): this & {
 		isValid: computed<boolean>;
 	};
 
 	/**
-	 * Applies coercion to incoming arguments before storage.
+	 * Adds coercion functionality to the observable, enabling transformation or sanitization
+	 * of input arguments before they are applied to the underlying value.
 	 *
-	 * @param coerce Function that transforms input values (default: identity).
-	 * @returns The same observable with coercion applied.
+	 * The provided `coerce` function is called with the arguments intended to update the observable.
+	 * Its return value (or values) replaces the original inputs and is then used to update the observable.
+	 *
+	 * This is useful for enforcing types, clamping ranges, parsing input, or any other
+	 * input normalization necessary prior to storing or processing values.
+	 *
+	 * @param coerce A function which accepts the incoming arguments and returns either:
+	 * - A single coerced value,
+	 * - An array of values to spread as individual arguments,
+	 * - Or the identity (default) which returns inputs unchanged.
+	 * If omitted, the identity function is used (no coercion).
+	 * @returns The same observable instance augmented with coercion behavior on set/update.
 	 */
 	coercible(coerce?: (...args: any[]) => any): this;
 
 	/**
-	 * Provides property and method-based projections of the observable's value.
+	 * Provides an advanced binding interface allowing property and method-based projections
+	 * of the observable's underlying value, facilitating creation of derived observables
+	 * or "sub-observables" for granular reactivity.
 	 *
-	 * The `bind` property enables *derived binding*:
-	 * - **Direct selection**: Use `bind.select()` to create a computed observable
-	 *   based on a projection of the current value.
-	 * - **Property bindings**: Access properties of the current value as
-	 *   observables (e.g., `bind.someProperty`).
-	 * - **Method bindings**: Call methods of the current value to get observables
-	 *   representing the method's return value (e.g., `bind.someMethod(args)`).
+	 * The `bind` property acts as a dynamic proxy object with the following capabilities:
+	 * - Properties of the current value become individual `baseObservable` instances,
+	 *   allowing binding and observation of sub-values directly.
+	 * - Methods of the current value can be invoked via the proxy, returning computed observables
+	 *   representing the method's return value.
+	 * - The `select` method allows creation of derived observables by applying arbitrary
+	 *   selector functions to the current value, producing computed projections.
 	 *
-	 * ### Example
+	 * This enables a flexible and expressive reactive data binding pattern,
+	 * supporting nested or computed data flow scenarios within the observable ecosystem.
+	 *
+	 * ### Example usage:
 	 * ```ts
 	 * const person = baseObservable(() => ({ name: "Alice", age: 30 }));
 	 *
-	 * // Bind to a specific property
+	 * // Bind to a specific property to observe it independently
 	 * const nameObs = person.bind.name; // baseObservable<string>
 	 *
-	 * // Bind to a computed projection
+	 * // Create a derived observable by applying a projection function
 	 * const greetingObs = person.bind.select(p => `Hello, ${p.name}`);
 	 *
-	 * // Bind to a method of the underlying value
-	 * const upperNameObs = person.bind.name.toUpperCase(); // baseObservable<string>
+	 * // Bind to a method of the underlying value, getting a computed observable result
+	 * const upperNameObs = person.bind.name.bind.toUpperCase(); // baseObservable<string>
 	 * ```
 	 *
-	 * @template T The underlying value type of the observable.
+	 * @template T The generic type parameter representing the type of the underlying value.
 	 */
 	bind: (T extends object | Function ? {
 		/**
-		 * Automatically projects properties and methods of the current value into
-		 * observables:
-		 * - Properties become `baseObservable<PropertyType>`.
-		 * - Methods become functions returning `baseObservable<ReturnType>`.
+		 * A mapped type that projects each property key `K` of the underlying value `T` into an
+		 * observable form:
+		 * - If the property is a method, it becomes a function returning a computed observable
+		 *   of the method's return type.
+		 * - Otherwise, it becomes a computed observable of the property's type.
 		 */
 		[K in keyof T]: T[K] extends (...args: infer A) => infer R
 			? (...args: A) => computed<R> : computed<T[K]>;
 	} : {}) & {
-		/** Reference to the current observable instance backing this bind proxy. */
+		/**
+		 * Direct reference to the current observable instance underlying this bind proxy.
+		 * This allows access to the root observable for advanced manipulation or introspection.
+		 */
 		__observable__: baseObservable<T>;
 
 		/**
-		 * Creates a derived observable by applying a selector function to the
-		 * current value of the observable.
+		 * Creates a new derived observable by applying a selector function to the current value.
+		 * This function enables transformation or projection of the observable's data into
+		 * new reactive streams.
 		 *
-		 * @param selector Function mapping the current value to a derived value.
-		 * @returns A new {@link baseObservable} representing the derived value.
+		 * @param selector A function which takes the current value of the observable and
+		 * returns a derived value of type `U`.
+		 * @returns A new computed observable representing the derived value.
 		 */
 		select<U>(selector: (value: T) => U): computed<U>;
 	};
 }
 
+/**
+ * Constructor interface for creating instances of {@link baseObservable}.
+ *
+ * Provides a callable signature and static utility methods to facilitate creation and
+ * binding of observables.
+ */
 interface baseObservableConstructor {
+	/**
+	 * Factory method signature: accepts a function which computes or returns the observable's value,
+	 * returning a `baseObservable` instance wrapping that function.
+	 *
+	 * @template T The type of the value produced by the base function.
+	 * @param baseFunction The function that computes or returns the value managed by the observable.
+	 * @returns An instance of {@link baseObservable} wrapping the provided function.
+	 */
 	<T = any>(baseFunction: (...args: any[]) => T): baseObservable<T>;
 
 	/**
-	 * Prototype object for all {@link baseObservable} instances.
-	 * Useful for extending methods or introspection.
+	 * Prototype object shared by all instances of {@link baseObservable}.
+	 * This can be used to extend, override, or introspect common instance methods
+	 * and properties.
 	 */
 	readonly prototype: baseObservable;
 
 	/**
-	 * Binds a value or {@link baseObservable} to a setter and optional observer.
+	 * Static utility method that facilitates binding a source value or observable to
+	 * a target setter and optionally an observer for reverse binding.
 	 *
-	 * **Behavior:**
-	 * - Plain value: Invokes `set` immediately once.
-	 * - Observable: 
-	 *   - Calls `set` with its current value.
-	 *   - Subscribes to `"valuechanged"` if mode supports output (`to` or `two-way`).
-	 *   - Invokes `observe` if mode supports input (`from` or `two-way`).
+	 * This method implements a flexible two-way binding system:
+	 * - If the `observable` argument is a plain value (not a `baseObservable`),
+	 *   it invokes the `set` callback immediately once with that value.
+	 * - If the `observable` argument is itself a `baseObservable` instance:
+	 *   - It calls `set` immediately with the observable's current value.
+	 *   - If the observable supports output binding modes (`"to"` or `"two-way"`),
+	 *     it subscribes to the `"valuechanged"` event, calling `set` on updates.
+	 *   - If the observable supports input binding modes (`"from"` or `"two-way"`),
+	 *     it invokes the optional `observe` callback to handle reverse updates.
 	 *
-	 * @template T Type of the value being bound.
-	 * @param observable The source value or {@link baseObservable}.
-	 * @param set Callback to update target when value changes.
-	 * @param observe Optional callback for reverse (input) binding.
+	 * @template T The type of the value managed by the observable or passed as a plain value.
+	 * @param observable The source value or {@link baseObservable} to bind from.
+	 * @param set A callback function to update the target when the source value changes.
+	 * @param observe An optional callback function invoked for input binding from target to source.
 	 */
 	autoBind<T>(observable: baseObservable<T> | T, set: (val: T) => void, observe?: (val: T) => void): void;
 }
 
+/**
+ * Factory function creating a new `baseObservable` instance wrapping the provided
+ * base function which produces or manages the observable's value.
+ *
+ * The returned callable object implements the `baseObservable` interface,
+ * including reactive event dispatching and property projections.
+ *
+ * @template T The type of the value produced or managed by the observable.
+ * @param baseFunction The function to invoke on calls to get or update the observable's value.
+ * @returns A new instance of {@link baseObservable} wrapping `baseFunction`.
+ */
 const baseObservable = function<T = any>(baseFunction: (...args: any[]) => T): baseObservable<T> {
 	// Create a callable object that delegates to the provided baseFunction
 	const callable = ((...args) => baseFunction(...args)) as baseObservable<T>;

@@ -23,46 +23,45 @@
  */
 
 /**
- * A custom event class that extends the standard DOM `Event` interface
- * to directly expose arbitrary change data as properties on the event instance.
+ * A custom Event subclass that spreads an arbitrary data object directly
+ * onto the event instance as properties.
  *
- * Unlike `CustomEvent`, which wraps data inside `detail`, this class
- * spreads the provided object onto the event itself for direct access.
+ * This differs from the standard `CustomEvent` pattern where data is
+ * encapsulated inside a `.detail` property.
  *
- * @typeParam T - The shape of the change data to attach (default: `object`).
+ * This design allows direct access to properties without needing
+ * to reference `.detail`.
  *
- * @example
- * ```ts
- * // Create a ValueChangeEvent with custom properties
- * const event = new ValueChangeEvent("valuechanged", { oldValue: 1, newValue: 2 }, { bubbles: true });
- *
- * // Access data directly
- * console.log(event.oldValue, event.newValue);
- *
- * // Dispatch and listen like any standard DOM event
- * element.dispatchEvent(event);
- * element.addEventListener("valuechanged", e => console.log(e.newValue));
- * ```
+ * @template T The shape of the change data attached to the event (defaults to `object`).
  */
 class ValueChangeEvent<T extends object = object> extends Event {
 	/**
-	 * Enables arbitrary property access to expose change data
-	 * (merged directly onto the event instance).
+	 * Index signature allowing arbitrary keys on the event instance.
+	 * This allows attaching dynamic properties from the change data.
 	 */
 	[key: string]: any;
 
 	/**
-	 * Creates a new `ValueChangeEvent`.
+	 * Constructs a new ValueChangeEvent.
 	 *
-	 * @param type - The event type name (e.g., `"valuechanged"`).
-	 * @param change - Optional data object; properties are shallow-copied
-	 *                 onto the event for direct access.
-	 * @param options - Standard `EventInit` options (`bubbles`, `cancelable`, `composed`).
+	 * @param type - The string event type (e.g., `"valuechanged"`).
+	 * @param change - Optional change data object to merge into the event.
+	 * @param options - Optional EventInit options: bubbles, cancelable, composed.
 	 */
 	constructor(type: string, change?: T, options?: EventInit) {
+		// Call base Event constructor with type and options
 		super(type, options);
-		if (change) {
-			Object.assign(this, change);
+
+		// If change data provided, shallow-copy all enumerable own properties
+		// onto `this` event instance for direct property access
+		if (change !== undefined && change !== null) {
+			// Defensive: ensure change is an object before assign
+			if (typeof change === 'object') {
+				Object.assign(this, change);
+			} else {
+				// Warn if someone tries to pass non-object change data
+				console.warn('ValueChangeEvent: change parameter expected to be an object but received', change);
+			}
 		}
 	}
 }

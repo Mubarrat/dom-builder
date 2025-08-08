@@ -22,59 +22,121 @@
  * SOFTWARE.
  */
 
-// Encapsulated in a block scope to avoid polluting the global scope.
+// Wrap the entire implementation in a block scope to avoid leaking variables to global scope.
 {
 	/**
-	 * Tracks per-element attribute observers.
+	 * `attributeObservers` is a WeakMap that keeps track of all registered attribute observers.
+	 * 
+	 * Structure details:
+	 * - Key: a DOM Node element that is being observed for attribute changes.
+	 * - Value: a Map where
+	 *    - Key: the attribute name (string) or null (if attribute name missing),
+	 *    - Value: a Set of callback functions to invoke when the attribute changes on that element.
 	 *
-	 * Structure:
-	 * - **Key**: DOM element being observed
-	 * - **Value**: Map of attribute names → Sets of callbacks to invoke on change
-	 *
-	 * Used internally by `observeElementAttr`.
+	 * Using WeakMap ensures that entries are garbage collected automatically
+	 * when DOM elements are removed and no longer referenced elsewhere.
 	 */
-	const attributeObservers = new WeakMap<Node, Map<string | null, Set<() => void>>>();
+	const attributeObservers = new WeakMap<
+		Node,
+		Map<string | null, Set<() => void>>
+	>();
 
-	// Observe all attribute changes in the document tree
-	new MutationObserver(mutations =>
-		mutations.forEach(mutation =>
-			attributeObservers
-				.get(mutation.target)
-				?.get(mutation.attributeName)
-				?.forEach(callback => callback())
-		)
-	).observe(document, { attributes: true, subtree: true });
 
 	/**
-	 * Registers a callback to be invoked whenever a specific attribute
-	 * on a given element changes.
+	 * `MutationObserver` monitors all attribute changes anywhere inside the entire `document`.
+	 * This observer is configured with:
+	 * - `attributes: true` — watch for any attribute changes
+	 * - `subtree: true` — observe changes inside all descendants of `document`
 	 *
-	 * Internally uses a single `MutationObserver` on `document`
-	 * and dispatches events to relevant subscribers.
+	 * When a mutation (attribute change) is detected, the observer:
+	 * 1. Retrieves the element (`mutation.target`) where the attribute changed.
+	 * 2. Gets the set of callbacks registered for the mutated attribute name.
+	 * 3. Invokes all these callbacks in order to notify subscribers about the change.
 	 *
-	 * @param element - The target DOM element to observe.
-	 * @param attribute - The name of the attribute to watch (e.g., `"class"`).
-	 * @param callback - Function to invoke when the attribute value changes.
+	 * This centralized observation is highly efficient compared to attaching
+	 * separate MutationObservers to every single element or attribute.
+	 */
+	new MutationObserver((mutations) => {
+		// Process each mutation record reported by MutationObserver
+		mutations.forEach((mutation) => {
+			// Retrieve the map of attribute observers for the mutated element
+			const handlersForElement = attributeObservers.get(mutation.target);
+
+			// Defensive check: ensure handlers exist for this element
+			if (!handlersForElement) return;
+
+			// Get the set of callbacks registered for the specific attribute that changed
+			const callbacksForAttribute = handlersForElement.get(mutation.attributeName);
+
+			// Defensive check: if no callbacks registered, nothing to invoke
+			if (!callbacksForAttribute) return;
+
+			// Invoke each registered callback function notifying about the attribute change
+			callbacksForAttribute.forEach(callback => {
+				try {
+					callback();
+				} catch (e) {
+					// Log error but continue notifying other callbacks
+					console.error("Error in attribute change callback:", e);
+				}
+			});
+		});
+	})
+	// Start observing document for attribute changes on all descendants (subtree)
+	.observe(document, { attributes: true, subtree: true });
+
+
+	/**
+	 * Registers a callback function to be invoked whenever a specific attribute
+	 * on a given DOM element changes.
+	 * 
+	 * This function maintains a centralized subscription registry,
+	 * so multiple callbacks on the same element/attribute combination
+	 * can coexist and be notified independently.
 	 *
+	 * Internally, it leverages a single `MutationObserver` on the entire document,
+	 * and dispatches notifications only to interested subscribers.
+	 *
+	 * @param element The DOM Node element to watch for attribute changes.
+	 * @param attribute The attribute name string to observe, e.g., "class" or "style".
+	 * @param callback The function to be called whenever the attribute changes.
+	 * 
 	 * @example
 	 * ```ts
-	 * const div = document.querySelector("div")!;
-	 *
-	 * observeElementAttr(div, "class", () => {
-	 *   console.log("Class changed to:", div.getAttribute("class"));
+	 * const myDiv = document.querySelector("div")!;
+	 * observeElementAttr(myDiv, "class", () => {
+	 *   console.log("The class attribute of the div changed to:", myDiv.getAttribute("class"));
 	 * });
-	 *
-	 * div.className = "new-class"; // triggers callback
+	 * 
+	 * // Changing the class attribute triggers the callback:
+	 * myDiv.className = "new-class";
 	 * ```
 	 */
-	// Use var to pollute.
-	var observeElementAttr = (element: Node, attribute: string, callback: () => void) => {
+	// Use `var` intentionally to allow this variable to be accessible outside the block scope
+	var observeElementAttr = (
+		element: Node,
+		attribute: string,
+		callback: () => void
+	): void => {
+		// Try to get the existing Map of attribute callbacks for the element
 		let handlers = attributeObservers.get(element);
-		if (!handlers) attributeObservers.set(element, handlers = new Map<string | null, Set<() => void>>());
 
+		// If no map exists yet for this element, create one and store it
+		if (!handlers) {
+			handlers = new Map<string | null, Set<() => void>>();
+			attributeObservers.set(element, handlers);
+		}
+
+		// Try to get the Set of callbacks registered for the specific attribute
 		let callbacks = handlers.get(attribute);
-		if (!callbacks) handlers.set(attribute, callbacks = new Set<() => void>());
 
+		// If no Set exists yet for this attribute, create one and store it
+		if (!callbacks) {
+			callbacks = new Set<() => void>();
+			handlers.set(attribute, callbacks);
+		}
+
+		// Add the provided callback function to the Set of callbacks
 		callbacks.add(callback);
 	};
 }

@@ -25,10 +25,12 @@
 /// <reference path="mutation.ts" />
 
 /**
- * Converts `kebab-case` strings into `camelCase` at the type level.
+ * Converts a `kebab-case` string to `camelCase` at the type level.
  *
- * Useful for mapping DOM tag names (e.g., `"my-element"`) to `myElement`
- * when generating typed builder APIs.
+ * This is useful for mapping DOM tag names like `"my-element"` to
+ * camelCase versions like `"myElement"` for builder function names.
+ *
+ * @template S - The kebab-case string to convert.
  *
  * @example
  * ```ts
@@ -40,56 +42,72 @@ type CamelCase<S extends string> =
 		? `${T}${Capitalize<CamelCase<U>>}`
 		: S;
 
-/** Represents valid attribute objects for an element. */
+/**
+ * Represents an attribute object passed to element builders.
+ *
+ * The keys are attribute names, and the values are their corresponding values.
+ * This allows setting attributes like `class`, `id`, `style`, and event handlers.
+ */
 type Attribute = Record<string, any>;
 
-/** Represents any valid child node: string, element, observable, etc. */
+/**
+ * Represents any valid child node passed to element builders.
+ *
+ * This can be strings, DOM nodes, observables, or any type that
+ * can be appended to an element as a child.
+ */
 type Child = any;
 
 /**
- * Typed builder functions for creating DOM elements in various namespaces.
+ * A collection of builder functions for DOM elements categorized by namespace.
  *
- * Each builder:
- * - Maps tag names (converted to `camelCase`) to factory functions.
- * - Each function accepts attributes and children to produce strongly-typed elements.
+ * For each namespace URI, the builder object maps tag names converted to camelCase
+ * to factory functions that accept attributes and children, returning
+ * strongly typed elements from the corresponding DOM interfaces.
+ *
+ * @remarks
+ * - HTML elements are under `"http://www.w3.org/1999/xhtml"`.
+ * - SVG elements are under `"http://www.w3.org/2000/svg"`.
+ * - MathML elements are under `"http://www.w3.org/1998/Math/MathML"`.
+ * - Custom namespaces fall back to generic `Element` nodes with string tag names.
  *
  * @example
  * ```ts
- * // HTML
- * const div = $html.div({ class: "box" }, "Hello");
+ * // Creating a <div> with a class and text content:
+ * const div = $html.div({ class: "container" }, "Hello World");
  *
- * // SVG
- * const circle = $svg.circle({ cx: 50, cy: 50, r: 40 });
+ * // Creating an SVG circle:
+ * const circle = $svg.circle({ cx: 50, cy: 50, r: 40, fill: "red" });
+ *
+ * // Using a custom namespace builder:
+ * const customNS = $dom("http://schemas.example.com/custom");
+ * const customElem = customNS.customElement({ "data-id": 123 }, "Custom Content");
  * ```
  */
 declare interface DomBuilders {
-	/** HTML (XHTML) namespace builder. */
+	/** XHTML namespace (HTML elements) */
 	"http://www.w3.org/1999/xhtml": {
 		[K in keyof HTMLElementTagNameMap as CamelCase<K>]:
 			(...args: (Attribute | Child)[]) => HTMLElementTagNameMap[K];
 	};
 
-	/** SVG namespace builder. */
+	/** SVG namespace */
 	"http://www.w3.org/2000/svg": {
 		[K in keyof SVGElementTagNameMap as CamelCase<K>]:
 			(...args: (Attribute | Child)[]) => SVGElementTagNameMap[K];
 	};
 
-	/** MathML namespace builder. */
+	/** MathML namespace */
 	"http://www.w3.org/1998/Math/MathML": {
 		[K in keyof MathMLElementTagNameMap as CamelCase<K>]:
 			(...args: (Attribute | Child)[]) => MathMLElementTagNameMap[K];
 	};
 
 	/**
-	 * Generic fallback for **custom namespaces**.
-	 * Produces functions that create `Element` nodes without strict tag typing.
+	 * Fallback builder for any other namespaces.
 	 *
-	 * @example
-	 * ```ts
-	 * const $custom = $dom("http://schemas.example.com/custom");
-	 * const node = $custom.node({ "data-id": 123 }, "Text");
-	 * ```
+	 * This creates generic `Element` instances without strict typing of tags,
+	 * allowing usage with custom XML namespaces.
 	 */
 	[namespace: string]: {
 		[tag: string]: (...args: (Attribute | Child)[]) => Element;
@@ -97,28 +115,37 @@ declare interface DomBuilders {
 }
 
 /**
- * DOM builder helpers mixed into `Window` and `Document`.
+ * Helpers to build DOM elements, mixed into global `Window` and `Document`.
  *
  * Provides:
- * - `$dom(namespace)` for arbitrary/custom namespaces
- * - `$html`, `$svg`, `$mml` for common ones
+ * - `$dom(namespace)` to create builders for any XML namespace.
+ * - Shortcut builders for common namespaces `$html`, `$svg`, and `$mml`.
+ *
+ * @example
+ * ```ts
+ * // Get a builder for SVG elements
+ * const svg = document.$svg;
+ *
+ * // Create a red circle
+ * const redCircle = svg.circle({ r: 40, fill: "red" });
+ *
+ * // Create a custom namespace builder
+ * const custom = window.$dom("http://schemas.example.com/custom");
+ * const node = custom.node({ "data-id": 42 }, "Example");
+ * ```
  */
 declare interface DomHelper {
 	/**
-	 * Creates a builder for the specified XML namespace.
+	 * Creates a builder object for the specified XML namespace URI.
 	 *
-	 * @param namespace - The namespace URI (e.g., `"http://www.w3.org/2000/svg"`).
-	 * @returns A tag-to-function map for creating namespaced elements.
+	 * The returned object maps camelCase tag names to factory functions.
 	 *
-	 * @example
-	 * ```ts
-	 * const $example = $dom("http://schemas.example.com/example");
-	 * const node = $example.node({ data: "Data" }, "Example Data");
-	 * ```
+	 * @param namespace - Namespace URI string (e.g., `"http://www.w3.org/2000/svg"`).
+	 * @returns A map of tag builder functions for the namespace.
 	 */
 	$dom<K extends keyof DomBuilders | string = string>(namespace: K): DomBuilders[K];
 
-	/** Builder for HTML elements (XHTML namespace). */
+	/** Builder for standard HTML elements in XHTML namespace. */
 	readonly $html: DomBuilders["http://www.w3.org/1999/xhtml"];
 
 	/** Builder for SVG elements. */
@@ -128,32 +155,39 @@ declare interface DomHelper {
 	readonly $mml: DomBuilders["http://www.w3.org/1998/Math/MathML"];
 }
 
-/** Augments `Document` with DOM builder helpers (`$dom`, `$html`, etc.). */
+/**
+ * Extend the global `Document` interface to include DOM builder helpers.
+ */
 declare interface Document extends DomHelper {}
 
-/** Augments `Window` with DOM builder helpers (`$dom`, `$html`, etc.). */
+/**
+ * Extend the global `Window` interface to include DOM builder helpers.
+ */
 declare interface Window extends DomHelper {}
 
 /**
- * Global builder function for arbitrary namespaces.
+ * Global function to create DOM builders for arbitrary namespaces.
  *
- * Equivalent to `document.$dom(namespace)`.
+ * Equivalent to calling `document.$dom(namespace)`.
+ *
+ * @param namespace - The XML namespace URI.
+ * @returns A builder object with tag factory functions.
  *
  * @example
  * ```ts
- * const $example = $dom("http://schemas.example.com/example");
- * const node = $example.node({ data: "Data" }, "Example Data");
+ * const custom = $dom("http://schemas.example.com/custom");
+ * const node = custom.node({ "data-attr": "value" }, "Content");
  * ```
  */
 declare function $dom<K extends keyof DomBuilders | string = string>(namespace: K): DomBuilders[K];
 
-/** Shortcut builder for HTML elements (`<div>`, `<span>`, etc.). */
+/** Shortcut builder for standard HTML elements. */
 declare const $html: DomBuilders["http://www.w3.org/1999/xhtml"];
 
-/** Shortcut builder for SVG elements (`<svg>`, `<circle>`, etc.). */
+/** Shortcut builder for SVG elements. */
 declare const $svg: DomBuilders["http://www.w3.org/2000/svg"];
 
-/** Shortcut builder for MathML elements (`<mfrac>`, `<msqrt>`, etc.). */
+/** Shortcut builder for MathML elements. */
 declare const $mml: DomBuilders["http://www.w3.org/1998/Math/MathML"];
 
 Object.defineProperties(Document.prototype, {

@@ -23,7 +23,38 @@
  */
 /// <reference path="computed.ts" />
 
-function cstr(strings: TemplateStringsArray, ...values) {
+/**
+ * Tagged template function for creating a reactive computed string based on
+ * embedded `baseObservable` values.
+ *
+ * This function processes a tagged template literal and dynamically constructs a
+ * computed string that updates whenever any of the embedded observable values change.
+ *
+ * If there are no observables among the template values, it returns a simple static
+ * concatenated string.
+ *
+ * If observables are present, it returns a function with a `.computed` property
+ * that depends on these observables, allowing reactive updates to the string.
+ *
+ * @param strings An array of string literals from the tagged template parts.
+ *
+ * @param values Values interpolated inside the template literal, some of which may
+ * be observables (instances of `baseObservable`).
+ *
+ * @returns Either a plain concatenated string if no observables are present,
+ * or a computed function that recomputes the interpolated string reactively.
+ *
+ * @example
+ * ```ts
+ * const obsName = baseObservable('Alice');
+ * const obsAge = baseObservable(30);
+ * const greeting = cstr`Hello, ${obsName}! You are ${obsAge} years old.`;
+ * console.log(greeting()); // "Hello, Alice! You are 30 years old."
+ * obsName('Bob');
+ * console.log(greeting()); // Reactively updates to "Hello, Bob! You are 30 years old."
+ * ```
+ */
+function cstr(strings: TemplateStringsArray, ...values): computed<string> | string {
     // Separate observables for tracking
     const observables = values.filter(v => v instanceof baseObservable);
 
