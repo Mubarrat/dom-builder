@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Table — Dom-Builder (no reaction)</title>
+  <script src="../../dist/dom.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; }
+    table { border-collapse: collapse; width: 100%; max-width: 600px; }
+    th, td { border: 1px solid #ccc; padding: 0.5rem 0.75rem; text-align: left; }
+    th { background: #f0f0f0; }
+    tr:nth-child(even) td { background: #fafafa; }
+  </style>
+</head>
+<body>
+  <script>
+    const employees = [
+      { name: "Alice",   role: "Engineer",   dept: "Backend"  },
+      { name: "Bob",     role: "Designer",   dept: "UX"       },
+      { name: "Carol",   role: "Manager",    dept: "Product"  },
+      { name: "Dave",    role: "Engineer",   dept: "Frontend" },
+      { name: "Eve",     role: "Analyst",    dept: "Data"     },
+    ];
+
+    // Build a table from an array of data objects.
+    const table = $html.table(
+      $html.thead(
+        $html.tr(
+          $html.th("Name"),
+          $html.th("Role"),
+          $html.th("Department")
+        )
+      ),
+      $html.tbody(
+        ...employees.map(emp =>
+          $html.tr(
+            $html.td(emp.name),
+            $html.td(emp.role),
+            $html.td(emp.dept)
+          )
+        )
+      )
+    );
+
+    document.body.append(
+      $html.h1("Employee Directory"),
+      table
+    );
+  </script>
+</body>
+</html>

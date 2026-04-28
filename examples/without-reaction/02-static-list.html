@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Static List — Dom-Builder (no reaction)</title>
+  <script src="../../dist/dom.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; }
+    ul { list-style: disc; padding-left: 1.5rem; }
+    li { margin-bottom: 0.4rem; }
+  </style>
+</head>
+<body>
+  <script>
+    // A plain array of items to render as a list.
+    const fruits = ["Apple", "Banana", "Cherry", "Date", "Elderberry"];
+
+    // Map each fruit string to an <li> element.
+    const list = $html.ul(
+      ...fruits.map(fruit => $html.li(fruit))
+    );
+
+    document.body.append(
+      $html.h1("My Fruit List"),
+      list
+    );
+  </script>
+</body>
+</html>
