@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contact Form — Dom-Builder (no reaction)</title>
+  <script src="../../dist/dom.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; }
+    form { display: flex; flex-direction: column; gap: 0.75rem; max-width: 360px; }
+    label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
+    input, textarea { padding: 0.4rem 0.6rem; border: 1px solid #bbb; border-radius: 4px; font-size: 1rem; }
+    button { padding: 0.5rem 1rem; background: #0078d4; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
+    button:hover { background: #005fa3; }
+    #result { margin-top: 1rem; color: #333; }
+  </style>
+</head>
+<body>
+  <script>
+    // Build a contact form declaratively using $html.
+    const nameInput    = $html.input({ type: "text",  placeholder: "Your name",    required: "" });
+    const emailInput   = $html.input({ type: "email", placeholder: "your@email.com", required: "" });
+    const messageInput = $html.textarea({ rows: "4", placeholder: "Write something…" });
+    const result       = $html.p({ id: "result" });
+
+    const form = $html.form(
+      { onsubmit: handleSubmit },
+      $html.h2("Contact Us"),
+      $html.label("Name",    nameInput),
+      $html.label("Email",   emailInput),
+      $html.label("Message", messageInput),
+      $html.button({ type: "submit" }, "Send")
+    );
+
+    function handleSubmit(e) {
+      e.preventDefault();
+      result.textContent =
+        `✅ Thanks, ${nameInput.value}! We'll reply to ${emailInput.value}.`;
+    }
+
+    document.body.append(form, result);
+  </script>
+</body>
+</html>

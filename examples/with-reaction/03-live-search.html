@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Search — Dom-Builder + Observable</title>
+  <script src="../../dist/dom.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; }
+    .search-app { max-width: 420px; }
+    input[type="search"] { width: 100%; padding: 0.5rem 0.75rem; font-size: 1rem;
+      border: 1px solid #bbb; border-radius: 4px; box-sizing: border-box; }
+    ul { list-style: none; padding: 0; margin-top: 0.75rem; }
+    li { padding: 0.4rem 0.5rem; border-bottom: 1px solid #eee; }
+    li em { color: #e25; font-style: normal; font-weight: bold; }
+    .empty { color: #999; font-style: italic; }
+  </style>
+</head>
+<body>
+  <script>
+    const COUNTRIES = [
+      "Afghanistan","Albania","Algeria","Argentina","Australia","Austria","Bangladesh",
+      "Belgium","Bolivia","Brazil","Canada","Chile","China","Colombia","Croatia",
+      "Czech Republic","Denmark","Egypt","Ethiopia","Finland","France","Germany",
+      "Ghana","Greece","Hungary","India","Indonesia","Iran","Iraq","Ireland",
+      "Israel","Italy","Japan","Jordan","Kazakhstan","Kenya","South Korea","Malaysia",
+      "Mexico","Morocco","Netherlands","New Zealand","Nigeria","Norway","Pakistan",
+      "Peru","Philippines","Poland","Portugal","Romania","Russia","Saudi Arabia",
+      "South Africa","Spain","Sudan","Sweden","Switzerland","Thailand","Turkey",
+      "Ukraine","United Kingdom","United States","Venezuela","Vietnam",
+    ];
+
+    // Reactive search query.
+    const query = observable("");
+
+    // Derived: filtered + highlighted list.
+    const results = (() => {
+      const q = query().trim().toLowerCase();
+      if (!q) return COUNTRIES;
+      return COUNTRIES.filter(c => c.toLowerCase().includes(q));
+    }).computed(query);
+
+    // Highlight matching part of a country name.
+    function highlight(name, q) {
+      if (!q) return [name];
+      const idx = name.toLowerCase().indexOf(q.toLowerCase());
+      if (idx === -1) return [name];
+      return [
+        name.slice(0, idx),
+        $html.em(name.slice(idx, idx + q.length)),
+        name.slice(idx + q.length),
+      ];
+    }
+
+    // Reactive list: re-renders whenever `results` or `query` changes.
+    const listEl = $html.ul(
+      (() => {
+        const q = query().trim();
+        const items = results();
+        if (items.length === 0) {
+          return $html.li({ class: "empty" }, `No results for "${q}"`);
+        }
+        return items.map(c => $html.li(...highlight(c, q)));
+      }).computed(results, query)
+    );
+
+    const app = $html.div({ class: "search-app" },
+      $html.h1("Country Search"),
+      $html.input({ type: "search", placeholder: "Type to filter…", value: query }),
+      listEl
+    );
+
+    document.body.append(app);
+  </script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Todo List — Dom-Builder + Observable</title>
+  <script src="../../dist/dom.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; }
+    .todo-app { max-width: 400px; }
+    .add-row { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+    .add-row input { flex: 1; padding: 0.4rem 0.6rem; border: 1px solid #bbb; border-radius: 4px; font-size: 1rem; }
+    button { padding: 0.4rem 0.8rem; border: none; border-radius: 4px; cursor: pointer; font-size: 0.95rem; }
+    .btn-add  { background: #0078d4; color: #fff; }
+    .btn-add:hover  { background: #005fa3; }
+    .todo-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0; border-bottom: 1px solid #eee; }
+    .todo-item span { flex: 1; }
+    .todo-item.done span { text-decoration: line-through; color: #aaa; }
+    .btn-remove { background: #e74c3c; color: #fff; font-size: 0.8rem; padding: 0.2rem 0.6rem; }
+    .btn-remove:hover { background: #c0392b; }
+    .stats { margin-top: 0.75rem; font-size: 0.85rem; color: #666; }
+  </style>
+</head>
+<body>
+  <script>
+    // Observable array of todo objects.
+    const todos = arrayObservable([
+      { text: "Read the Dom-Builder docs", done: false },
+      { text: "Build something reactive",  done: false },
+    ]);
+
+    // Computed: number of remaining (not-done) tasks.
+    const remaining = (() => todos.filter(t => !t.done).length).computed(todos);
+
+    const newText = observable("");
+
+    function addTodo() {
+      const text = newText().trim();
+      if (!text) return;
+      todos.push({ text, done: false });
+      newText("");
+    }
+
+    function removeTodo(index) {
+      todos.splice(index, 1);
+    }
+
+    function toggleTodo(index) {
+      const item = todos[index];
+      todos[index] = { ...item, done: !item.done };
+    }
+
+    // Render a single row for each todo item.
+    function todoRow(item, index) {
+      const obs = observable(item);
+      return $html.div(
+        { class: obs.bind.select(i => "todo-item" + (i.done ? " done" : "")) },
+        $html.input({
+          type: "checkbox",
+          checked: obs.bind.done,
+          onchange: () => toggleTodo(index)
+        }),
+        $html.span(obs.bind.text),
+        $html.button({ class: "btn-remove", onclick: () => removeTodo(index) }, "✕")
+      );
+    }
+
+    const inputEl = $html.input({
+      type: "text",
+      placeholder: "New task…",
+      value: newText,
+      onkeydown: e => { if (e.key === "Enter") addTodo(); }
+    });
+
+    const app = $html.div({ class: "todo-app" },
+      $html.h1("Todo List"),
+      $html.div({ class: "add-row" },
+        inputEl,
+        $html.button({ class: "btn-add", onclick: addTodo }, "Add")
+      ),
+      // arrayObservable renders each item reactively.
+      todos.bind.map((item, i) => todoRow(item, i)),
+      $html.p({ class: "stats" },
+        cstr`${remaining} task(s) remaining`
+      )
+    );
+
+    document.body.append(app);
+  </script>
+</body>
+</html>

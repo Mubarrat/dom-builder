@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dom-Builder Examples</title>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; max-width: 700px; margin: 0 auto; }
+    h1 { margin-bottom: 0.25rem; }
+    .subtitle { color: #666; margin-top: 0; margin-bottom: 2rem; }
+    h2 { border-bottom: 1px solid #ddd; padding-bottom: 0.25rem; }
+    ul { list-style: none; padding: 0; }
+    li { margin-bottom: 0.6rem; }
+    a { color: #0078d4; text-decoration: none; font-weight: 500; }
+    a:hover { text-decoration: underline; }
+    .desc { color: #555; font-size: 0.88rem; margin-left: 0.5rem; }
+    .badge { display: inline-block; font-size: 0.7rem; padding: 0.1rem 0.4rem;
+      border-radius: 10px; vertical-align: middle; margin-right: 0.4rem; }
+    .badge-static   { background: #dff0d8; color: #3c763d; }
+    .badge-reactive { background: #d9edf7; color: #31708f; }
+  </style>
+</head>
+<body>
+  <h1>Dom-Builder — Examples</h1>
+  <p class="subtitle">Runnable demos for the <a href="https://github.com/Mubarrat/dom-builder">Dom-Builder</a> library.</p>
+
+  <h2>Without Reaction (Dom-Builder only)</h2>
+  <ul>
+    <li>
+      <span class="badge badge-static">static</span>
+      <a href="without-reaction/01-hello-world.html">Hello World</a>
+      <span class="desc">— Build a card element declaratively.</span>
+    </li>
+    <li>
+      <span class="badge badge-static">static</span>
+      <a href="without-reaction/02-static-list.html">Static List</a>
+      <span class="desc">— Render an array as a &lt;ul&gt; using <code>.map()</code>.</span>
+    </li>
+    <li>
+      <span class="badge badge-static">static</span>
+      <a href="without-reaction/03-contact-form.html">Contact Form</a>
+      <span class="desc">— Declarative form with a submit handler.</span>
+    </li>
+    <li>
+      <span class="badge badge-static">static</span>
+      <a href="without-reaction/04-data-table.html">Data Table</a>
+      <span class="desc">— Build a &lt;table&gt; from an array of objects.</span>
+    </li>
+    <li>
+      <span class="badge badge-static">static</span>
+      <a href="without-reaction/05-svg-badge.html">SVG Badges</a>
+      <span class="desc">— Use <code>$svg</code> to compose SVG elements.</span>
+    </li>
+  </ul>
+
+  <h2>With Reaction (Dom-Builder + Observable)</h2>
+  <ul>
+    <li>
+      <span class="badge badge-reactive">reactive</span>
+      <a href="with-reaction/01-live-counter.html">Live Counter</a>
+      <span class="desc">— <code>observable</code> bound directly to the DOM.</span>
+    </li>
+    <li>
+      <span class="badge badge-reactive">reactive</span>
+      <a href="with-reaction/02-todo-list.html">Todo List</a>
+      <span class="desc">— <code>arrayObservable</code>, <code>computed</code>, and <code>cstr</code>.</span>
+    </li>
+    <li>
+      <span class="badge badge-reactive">reactive</span>
+      <a href="with-reaction/03-live-search.html">Live Search</a>
+      <span class="desc">— Filter a list reactively as you type.</span>
+    </li>
+    <li>
+      <span class="badge badge-reactive">reactive</span>
+      <a href="with-reaction/04-registration-form.html">Registration Form</a>
+      <span class="desc">— <code>.validatable()</code>, computed error messages, and disabled submit.</span>
+    </li>
+    <li>
+      <span class="badge badge-reactive">reactive</span>
+      <a href="with-reaction/05-optimistic-like.html">Optimistic Like Button</a>
+      <span class="desc">— <code>.optimistic()</code> update with automatic rollback on failure.</span>
+    </li>
+  </ul>
+</body>
+</html>

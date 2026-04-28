@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Optimistic Like Button — Dom-Builder + Observable</title>
+  <script src="../../dist/dom.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 1.2rem 1.5rem; max-width: 340px; }
+    .card h2 { margin: 0 0 0.5rem; }
+    .card p  { color: #555; margin: 0 0 1rem; }
+    .like-row { display: flex; align-items: center; gap: 0.75rem; }
+    button { padding: 0.45rem 1rem; border: none; border-radius: 20px; cursor: pointer; font-size: 0.95rem; }
+    .btn-like { background: #e74c3c; color: #fff; }
+    .btn-like:disabled { background: #f1a1a1; cursor: default; }
+    .count { font-size: 1.1rem; font-weight: bold; }
+    .status { font-size: 0.8rem; color: #888; margin-top: 0.5rem; min-height: 1.2em; }
+  </style>
+</head>
+<body>
+  <script>
+    // Simulate a server that randomly fails 40% of the time.
+    function fakeServerLike(postId) {
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          Math.random() > 0.4 ? resolve({ likes: likes() }) : reject(new Error("Server error"));
+        }, 800);
+      });
+    }
+
+    const likes   = observable(42);
+    const loading = observable(false);
+    const status  = observable("");
+
+    function handleLike() {
+      if (loading()) return;
+      loading(true);
+      status("Saving…");
+
+      // Optimistic update: immediately +1, roll back on failure.
+      likes.optimistic(
+        current => current + 1,
+        fakeServerLike("post-1")
+      )
+        .then(() => status("✅ Liked!"))
+        .catch(() => status("❌ Failed — like removed."))
+        .finally(() => loading(false));
+    }
+
+    const card = $html.div({ class: "card" },
+      $html.h2("Dom-Builder Deep Dive"),
+      $html.p("Learn how to build reactive UIs without a framework."),
+      $html.div({ class: "like-row" },
+        $html.button(
+          { class: "btn-like", disabled: loading, onclick: handleLike },
+          "♥ Like"
+        ),
+        $html.span({ class: "count" }, cstr`${likes} likes`)
+      ),
+      $html.p({ class: "status" }, status)
+    );
+
+    document.body.append(
+      $html.h1("Optimistic Like Button"),
+      $html.p("Click Like — the count updates immediately, then rolls back if the (simulated) server rejects."),
+      card
+    );
+  </script>
+</body>
+</html>

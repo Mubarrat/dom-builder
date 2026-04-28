@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Registration Form — Dom-Builder + Observable</title>
+  <script src="../../dist/dom.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; }
+    form { display: flex; flex-direction: column; gap: 0.9rem; max-width: 360px; }
+    label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.9rem; }
+    input { padding: 0.4rem 0.6rem; border: 1px solid #bbb; border-radius: 4px; font-size: 1rem; }
+    input.invalid { border-color: #e74c3c; }
+    .error { color: #e74c3c; font-size: 0.8rem; min-height: 1em; }
+    button[type="submit"] {
+      padding: 0.55rem 1rem; background: #0078d4; color: #fff;
+      border: none; border-radius: 4px; cursor: pointer; font-size: 1rem;
+    }
+    button[type="submit"]:disabled { background: #aaa; cursor: default; }
+    .success { color: #27ae60; font-weight: bold; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <script>
+    // Reactive state for each field.
+    const username = observable("").validatable(v => v.trim().length >= 3);
+    const email    = observable("").validatable(v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v));
+    const password = observable("").validatable(v => v.length >= 8);
+    const confirm  = observable("");
+
+    // Passwords match?
+    const passwordsMatch = (() => password() === confirm() && confirm().length > 0).computed(password, confirm);
+
+    // Form is valid when all individual fields are valid AND passwords match.
+    const formValid = (() =>
+      username.isValid() && email.isValid() && password.isValid() && passwordsMatch()
+    ).computed(username.isValid, email.isValid, password.isValid, passwordsMatch);
+
+    const submitted = observable(false);
+
+    function submitForm(e) {
+      e.preventDefault();
+      if (formValid()) submitted(true);
+    }
+
+    // Helper: add "invalid" class only after the field has been touched.
+    function fieldClass(obs) {
+      const touched = observable(false);
+      obs.addEventListener("valuechanged", () => touched(true));
+      return (() => touched() && !obs.isValid() ? "invalid" : "").computed(touched, obs.isValid);
+    }
+
+    const app = $html.form(
+      { onsubmit: submitForm },
+
+      $html.h1("Create Account"),
+
+      $html.label("Username",
+        $html.input({ type: "text",     value: username, class: fieldClass(username) }),
+        $html.span({ class: "error" },
+          (() => username.value.trim().length > 0 && !username.isValid()
+            ? "At least 3 characters required." : "").computed(username.isValid, username)
+        )
+      ),
+
+      $html.label("Email",
+        $html.input({ type: "email",    value: email,    class: fieldClass(email) }),
+        $html.span({ class: "error" },
+          (() => email.value.length > 0 && !email.isValid()
+            ? "Enter a valid email address." : "").computed(email.isValid, email)
+        )
+      ),
+
+      $html.label("Password",
+        $html.input({ type: "password", value: password, class: fieldClass(password) }),
+        $html.span({ class: "error" },
+          (() => password.value.length > 0 && !password.isValid()
+            ? "Password must be at least 8 characters." : "").computed(password.isValid, password)
+        )
+      ),
+
+      $html.label("Confirm Password",
+        $html.input({ type: "password", value: confirm }),
+        $html.span({ class: "error" },
+          (() => confirm.value.length > 0 && !passwordsMatch()
+            ? "Passwords do not match." : "").computed(passwordsMatch, confirm)
+        )
+      ),
+
+      $html.button({ type: "submit", disabled: (() => !formValid()).computed(formValid) }, "Register"),
+
+      $html.p({ class: "success" },
+        (() => submitted() ? `Welcome, ${username()}! 🎉` : "").computed(submitted, username)
+      )
+    );
+
+    document.body.append(app);
+  </script>
+</body>
+</html>

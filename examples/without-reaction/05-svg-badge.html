@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SVG Badge — Dom-Builder (no reaction)</title>
+  <script src="../../dist/dom.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; background: #f5f5f5; }
+  </style>
+</head>
+<body>
+  <script>
+    // Dom-Builder works with any namespace — including SVG.
+    // Build a reusable "badge" function that returns an SVG element.
+    function makeBadge(label, value, color) {
+      const labelWidth  = label.length * 7 + 10;
+      const valueWidth  = value.length * 7 + 10;
+      const totalWidth  = labelWidth + valueWidth;
+
+      return $svg.svg(
+        { width: totalWidth, height: 20, viewBox: `0 0 ${totalWidth} 20` },
+
+        $svg.rect({ x: 0, y: 0, width: labelWidth,  height: 20, fill: "#555" }),
+        $svg.rect({ x: labelWidth, y: 0, width: valueWidth, height: 20, fill: color }),
+
+        $svg.text({
+          x: labelWidth / 2, y: 14, "text-anchor": "middle",
+          fill: "#fff", "font-size": "11", "font-family": "DejaVu Sans,Verdana,sans-serif"
+        }, label),
+
+        $svg.text({
+          x: labelWidth + valueWidth / 2, y: 14, "text-anchor": "middle",
+          fill: "#fff", "font-size": "11", "font-family": "DejaVu Sans,Verdana,sans-serif"
+        }, value)
+      );
+    }
+
+    document.body.append(
+      $html.h1("SVG Badges"),
+      $html.p("Built with $svg — no raw HTML strings needed."),
+      $html.div({ style: "display:flex; gap:0.5rem; flex-wrap:wrap;" },
+        makeBadge("build",    "passing", "#4c1"),
+        makeBadge("license",  "MIT",     "#08c"),
+        makeBadge("version",  "4.0.1",   "#e05d44"),
+        makeBadge("coverage", "97%",     "#4c1")
+      )
+    );
+  </script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hello World — Dom-Builder (no reaction)</title>
+  <script src="../../dist/dom.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; }
+    .card { border: 1px solid #ccc; border-radius: 8px; padding: 1rem 1.5rem; max-width: 320px; }
+  </style>
+</head>
+<body>
+  <script>
+    // Build a simple card element and append it to the page.
+    const card = $html.div({ class: "card" },
+      $html.h2("Hello, Dom-Builder!"),
+      $html.p("This card was created entirely in JavaScript — no HTML templates needed."),
+      $html.a({ href: "https://github.com/Mubarrat/dom-builder", target: "_blank" }, "View on GitHub")
+    );
+
+    document.body.append(card);
+  </script>
+</body>
+</html>
